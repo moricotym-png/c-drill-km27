@@ -369,7 +369,8 @@ function checkMedals(){
   S.stats.bestStreak=v.streak;
   return MEDALS.filter(m=>!S.stats.medals[m.id]&&v[m.cat]>=m.n).map(m=>{S.stats.medals[m.id]=today();return m;});
 }
-function tick(){if(!Q)return;const now=Date.now();S.stats.timeMs+=Math.min(Math.max(0,now-(Q.lastT||now)),90000);Q.lastT=now;}
+function tick(){if(!Q)return;const now=Date.now(),dt=Math.min(Math.max(0,now-(Q.lastT||now)),90000);S.stats.timeMs+=dt;Q.lastT=now;
+  if(dt){const d=S.days[today()]||(S.days[today()]={n:0,c:0});d.t=(d.t||0)+dt;}}
 function fmtTime(ms){const m=Math.floor(ms/60000);return m<60?`${m}<small>分</small>`:`${Math.floor(m/60)}<small>時間</small>${m%60?`${m%60}<small>分</small>`:""}`;}
 function medalHTML(m,pop){const on=!!S.stats.medals[m.id];return`<div class="medal ${on?"":"off"} ${pop?"pop":""}"><i style="--mc:var(--${TC[m.t]})">${m.inner}</i><span>${m.label}</span></div>`;}
 function medalsHTML(){return Object.entries(CATS).map(([k,c])=>`<div class="mrow"><p class="mlabel">${c}</p><div class="medals">${MEDALS.filter(m=>m.cat===k).map(m=>medalHTML(m)).join("")}</div></div>`).join("");}
@@ -773,7 +774,7 @@ function renderList(){
 function renderSettings(){
   return `<header class="top"><div><p class="eyebrow">設定</p><h1>学習の設定</h1></div></header>
   <section class="card panel"><h2>1日に新しく覚える単語の数</h2>
-    <div class="seg">${[5,10,15,20].map(n=>`<button data-act="perday" data-n="${n}" class="${S.settings.perDay===n?"on":""}">${n}語</button>`).join("")}</div></section>
+    <div class="seg">${[5,10,15,20,30,40,50].map(n=>`<button data-act="perday" data-n="${n}" class="${S.settings.perDay===n?"on":""}">${n}語</button>`).join("")}</div></section>
   <section class="card panel"><h2>出題の種類</h2>
     <div class="checks">${Object.entries(TYPES).map(([k,v])=>`<label><input type="checkbox" id="t-${k}" data-type="${k}" ${S.settings.types[k]?"checked":""} ${k==="listen"&&!hasSpeech?"disabled":""}>${v}</label>`).join("")}</div>
     ${hasSpeech?"":'<p class="note">このブラウザでは音声が使えません。</p>'}</section>
