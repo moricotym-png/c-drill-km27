@@ -854,7 +854,8 @@ document.addEventListener("input",e=>{
 document.addEventListener("keydown",e=>{
   if(e.key==="Enter"&&e.target.id==="spell"&&Q&&!Q.answered){e.preventDefault();const v=e.target.value;Q.typed=v;settle(norm(v)===norm(Q.cur.w.w));}
 });
-document.addEventListener("visibilitychange",()=>{if(!document.hidden&&!Q)render();});
+// 成長ログが単語を足していることがあるので、開き直したときは保存データを読み直す
+document.addEventListener("visibilitychange",()=>{if(!document.hidden&&!Q){if(!preview)load();render();}});
 
 load();save();render();
 </script>
