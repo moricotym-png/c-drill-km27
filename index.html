@@ -112,6 +112,17 @@ mark{background:linear-gradient(transparent 58%,var(--hl) 58%);color:inherit;pad
 .miss li{display:flex;gap:10px;align-items:baseline;border-bottom:1px solid var(--line);padding-bottom:6px}
 .miss b{font-family:var(--f-word);font-size:17px}
 
+.photo-btns{display:flex;flex-direction:column;gap:10px}
+.photo{display:flex;align-items:center;justify-content:center;gap:8px;cursor:pointer;box-sizing:border-box;white-space:normal;text-align:center}
+.photo svg{width:20px;height:20px;flex:none}
+.photo input{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
+.photo.off{opacity:.45;pointer-events:none}
+.ocr-st{display:flex;align-items:center;gap:8px;background:var(--card);border:1.5px solid var(--line);border-radius:10px;padding:10px 12px;font-size:13.5px;font-weight:700;margin:0}
+.ocr-st.err{background:var(--ng-bg);color:var(--ng);border-color:transparent}
+.spin{width:14px;height:14px;border:2.5px solid var(--line);border-top-color:var(--primary);border-radius:50%;animation:spin .8s linear infinite;flex:none}
+@keyframes spin{to{transform:rotate(360deg)}}
+.steps-ol{margin:4px 0 0;padding-left:1.3em;display:flex;flex-direction:column;gap:6px;font-size:14px}
+.steps-ol .note{display:block}
 .steps{padding:14px 16px}
 .steps ol{margin:0;padding-left:1.3em;display:flex;flex-direction:column;gap:6px}
 .steps .note{display:block}
@@ -128,6 +139,7 @@ textarea{resize:vertical;font-size:14px}
 .manual{padding:12px 16px}
 .manual summary{font-weight:700;cursor:pointer}
 .manual .field{margin-top:10px}
+.manual .btn{margin-top:10px}
 
 .filters{display:grid;grid-template-columns:1fr 110px;gap:8px}
 .wrow{border-bottom:1px solid var(--line)}
@@ -302,6 +314,8 @@ const DAYS=[0,1,3,7,14,30,60];
 const LV=["未学習","Lv.1","Lv.2","Lv.3","Lv.4","Lv.5","定着"];
 const TYPES={en2ja:"英語を見て意味を選ぶ",ja2en:"意味を見て英語を選ぶ",cloze:"例文の空欄に入る語を選ぶ",listen:"発音を聞いて意味を選ぶ",spell:"つづりを書く（Lv.2から）"};
 const SPK='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5L6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/></svg>';
+const CAM='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>';
+const PEN='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 4l5 5L9 20H4v-5z"/><path d="M3 23h18" stroke="#e5484d"/></svg>';
 const hasSpeech=typeof window.speechSynthesis!=="undefined";
 
 const pad=n=>String(n).padStart(2,"0");
@@ -574,24 +588,33 @@ function parseText(txt){
 }
 function previewHTML(){
   if(!preview)return"";
-  if(!preview.items.length)return`<p class="warn">単語が見つかりませんでした。単語・意味・例文が入った部分をコピーしているか確認してください。</p>`;
+  if(!preview.items.length)return preview.red?"":`<p class="warn">単語が見つかりませんでした。単語・意味・例文が入った部分をコピーしているか確認してください。</p>`;
   const have=new Set(S.words.map(w=>norm(w.w)));
   return `<section class="pv"><h2>読み取った単語（${preview.items.length}語）</h2><p class="note">まちがいがあれば直してから追加してください。チェックを外した語は追加されません。</p>
     ${preview.items.map((it,i)=>{const dup=have.has(norm(it.w));return`<div class="card pv-row" data-i="${i}"><input type="checkbox" id="pv-c${i}" ${dup?"":"checked"} aria-label="${esc(it.w)}を追加">
-      <div class="inputs"><input type="text" class="w" id="pv-w${i}" value="${esc(it.w)}" aria-label="英単語"><input type="text" id="pv-j${i}" value="${esc(it.ja)}" aria-label="意味"><input type="text" id="pv-e${i}" value="${esc(it.ex)}" aria-label="例文">${dup?'<span class="dup">すでに登録ずみ（チェックすると意味と例文を上書き）</span>':""}</div></div>`}).join("")}
+      <div class="inputs"><input type="text" class="w" id="pv-w${i}" value="${esc(it.w)}" aria-label="英単語"><input type="text" id="pv-j${i}" value="${esc(it.ja)}" placeholder="意味を入れてください" aria-label="意味"><input type="text" id="pv-e${i}" value="${esc(it.ex)}" aria-label="例文">${dup?'<span class="dup">すでに登録ずみ（チェックすると意味と例文を上書き）</span>':""}</div></div>`}).join("")}
     <button class="btn primary wide" data-act="commit">チェックした単語を追加</button></section>`;
 }
 function renderAdd(){
+  const off=ocrBusy?" off":"",dis=ocrBusy?"disabled":"";
   return `<header class="top"><div><p class="eyebrow">単語を追加</p><h1>写真から取りこむ</h1></div></header>
-  <section class="card steps"><ol>
-    <li>写真アプリで単語リストのスクショを開く</li>
-    <li>文字を長押しして「すべてを選択」→「コピー」<span class="note">Android は Googleレンズの「テキストを選択」でコピー</span></li>
-    <li>下の欄に貼りつけて「読み取る」</li></ol></section>
-  <div class="field"><label class="label" for="paste">コピーした文字</label>
-    <textarea id="paste" rows="6" placeholder="ここに貼りつけ（スクショ数枚分をまとめて貼ってもOK）">${esc(draft)}</textarea></div>
+  <div class="photo-btns">
+    <label class="btn primary wide photo${off}"><input type="file" accept="image/*" multiple data-ocr="list" ${dis}>${CAM}単語リストを撮る</label>
+    <label class="btn wide photo${off}"><input type="file" accept="image/*" multiple data-ocr="red" ${dis}>${PEN}長文の赤線の単語を撮る</label>
+  </div>
+  <p class="note">カメラで撮るか、写真アプリから選べます（何枚かまとめて選んでもOK）。赤線モードは、赤ペンで線を引いた単語だけを拾って、意味を辞書から入れます。</p>
+  <div id="ocr-status">${ocrStatusHTML()}</div>
   <div class="field"><label class="label" for="setname">セット名（空らんなら自動で読み取り）</label><input type="text" id="setname" placeholder="例：C10" value="${esc(preview?preview.set:"")}"></div>
-  <button class="btn primary wide" data-act="parse">読み取る</button>
   <div id="preview">${previewHTML()}</div>
+  <details class="card manual"${draft&&!preview?" open":""}><summary>コピーした文字を貼りつける${draft?"（読み取った文字）":""}</summary>
+    <ol class="steps-ol">
+      <li>写真アプリで単語リストのスクショを開く</li>
+      <li>文字を長押しして「すべてを選択」→「コピー」<span class="note">Android は Googleレンズの「テキストを選択」でコピー</span></li>
+      <li>下の欄に貼りつけて「読み取る」</li></ol>
+    <div class="field"><label class="label" for="paste">コピーした文字</label>
+      <textarea id="paste" rows="6" placeholder="ここに貼りつけ（スクショ数枚分をまとめて貼ってもOK）">${esc(draft)}</textarea></div>
+    <button class="btn primary wide" data-act="parse">読み取る</button>
+  </details>
   <details class="card manual"><summary>1語ずつ手で入力する</summary>
     <div class="field"><label class="label" for="m-w">英単語</label><input type="text" id="m-w" autocapitalize="off"></div>
     <div class="field"><label class="label" for="m-j">意味</label><input type="text" id="m-j"></div>
@@ -604,6 +627,125 @@ function upsert(set,w,ja,ex){
   const ex0=S.words.find(x=>norm(x.w)===norm(w));
   if(ex0){ex0.ja=ja;ex0.ex=ex;return false;}
   S.words.push({id:uid(),set,w,ja,ex,stage:0,due:null,ok:0,ng:0,learned:null});return true;
+}
+
+/* ---------- photo reading ---------- */
+const TESS_URL="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js";
+let ocrBusy=false,ocrMsg="",ocrErr=false,dict=null;const ocrWorkers={};
+function ocrStatusHTML(){return ocrMsg?`<p class="ocr-st${ocrErr?" err":""}">${ocrBusy?'<span class="spin" aria-hidden="true"></span>':""}${esc(ocrMsg)}</p>`:"";}
+function setOcr(msg,err){ocrMsg=msg;ocrErr=!!err;const el=document.getElementById("ocr-status");if(el)el.innerHTML=ocrStatusHTML();
+  document.querySelectorAll("[data-ocr]").forEach(i=>{i.disabled=ocrBusy;i.parentElement.classList.toggle("off",ocrBusy);});}
+function loadScript(src){return new Promise((ok,ng)=>{if(window.Tesseract)return ok();const s=document.createElement("script");s.src=src;s.onload=ok;s.onerror=()=>ng(new Error("script"));document.head.appendChild(s);});}
+let ocrStep="";
+async function getWorker(langs){
+  const key=langs.join("+");if(ocrWorkers[key])return ocrWorkers[key];
+  await loadScript(TESS_URL);
+  ocrWorkers[key]=Tesseract.createWorker(langs,1,{logger:m=>{
+    if(!ocrBusy)return;const p=m.progress?` ${Math.round(m.progress*100)}%`:"";
+    if(m.status==="recognizing text")setOcr(`${ocrStep}読み取り中…${p}`);
+    else if(/load|initializ/.test(m.status))setOcr(`読み取りの準備中…${p}（初回は少し時間がかかります）`);
+  }}).catch(e=>{delete ocrWorkers[key];throw e;});
+  return ocrWorkers[key];
+}
+function loadImg(file){return new Promise((ok,ng)=>{const u=URL.createObjectURL(file),im=new Image();im.onload=()=>{ok(im);setTimeout(()=>URL.revokeObjectURL(u),1000);};im.onerror=()=>ng(new Error("image"));im.src=u;});}
+const isRed=(r,g,b)=>r>120&&r-g>55&&r-b>35;
+async function prepImage(file){
+  const im=await loadImg(file);
+  const k=Math.min(1,2400/Math.max(im.naturalWidth,im.naturalHeight));
+  const W=Math.round(im.naturalWidth*k),H=Math.round(im.naturalHeight*k);
+  const cv=document.createElement("canvas");cv.width=W;cv.height=H;const cx=cv.getContext("2d",{willReadFrequently:true});
+  cx.drawImage(im,0,0,W,H);const id=cx.getImageData(0,0,W,H),d=id.data,mask=new Uint8Array(W*H);
+  for(let i=0,p=0;i<d.length;i+=4,p++){const r=d[i],g=d[i+1],b=d[i+2];
+    if(isRed(r,g,b)){mask[p]=1;d[i]=d[i+1]=d[i+2]=255;}
+    else{const y=Math.round(.299*r+.587*g+.114*b);d[i]=d[i+1]=d[i+2]=y;}}
+  cx.putImageData(id,0,0);return{cv,mask,W,H};
+}
+function redRatio(img,x0,x1,y0,y1){
+  x0=Math.max(0,Math.floor(x0));x1=Math.min(img.W-1,Math.ceil(x1));y0=Math.max(0,Math.floor(y0));y1=Math.min(img.H-1,Math.ceil(y1));
+  if(x1<=x0||y1<=y0)return 0;let hit=0;
+  for(let x=x0;x<=x1;x++){for(let y=y0;y<=y1;y++){if(img.mask[y*img.W+x]){hit++;break;}}}
+  return hit/(x1-x0+1);
+}
+function underlined(img,b){const h=b.y1-b.y0;return redRatio(img,b.x0,b.x1,b.y0+h*.5,b.y1+Math.max(6,h*.8))>=.55;}
+function cleanJa(t){const J="[぀-ヿ㐀-鿿、。・ー「」（）()〜]";
+  return t.replace(new RegExp(`(${J}) +(?=${J})`,"g"),"$1").replace(/[|｜]/g,"");}
+async function loadDict(){
+  if(dict)return dict;setOcr("辞書を準備中…");
+  const r=await fetch("dict.json");if(!r.ok)throw new Error("dict");dict=await r.json();return dict;
+}
+function lemma(w){
+  const D=dict.w,c=[w];if(dict.irr[w])c.push(dict.irr[w]);
+  const cut=n=>w.slice(0,-n),dbl=s=>s.length>2&&s[s.length-1]===s[s.length-2]?s.slice(0,-1):null;
+  if(w.endsWith("ies"))c.push(cut(3)+"y");if(w.endsWith("es"))c.push(cut(2));if(w.endsWith("s"))c.push(cut(1));
+  if(w.endsWith("ied"))c.push(cut(3)+"y");if(w.endsWith("ed")){c.push(cut(2),cut(1),dbl(cut(2)));}
+  if(w.endsWith("ing")){c.push(cut(3),cut(3)+"e",dbl(cut(3)));}
+  if(w.endsWith("ier"))c.push(cut(3)+"y");if(w.endsWith("iest"))c.push(cut(4)+"y");
+  if(w.endsWith("er"))c.push(cut(2),cut(1));if(w.endsWith("est"))c.push(cut(3),cut(2));
+  if(w.endsWith("ly"))c.push(cut(2));if(w.endsWith("ily"))c.push(cut(3)+"y");
+  for(const x of c)if(x&&D[x])return{w:x,ja:D[x]};return{w,ja:""};
+}
+function sentenceFor(text,surface){
+  const flat=text.replace(/-\s*\n\s*/g,"").replace(/\s+/g," ").trim();
+  const ss=flat.split(/(?<=[.!?”"])\s+(?=[A-Z“"])/);
+  const re=new RegExp("(^|[^A-Za-z])"+surface.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")+"($|[^A-Za-z])","i");
+  let s=ss.find(x=>re.test(x))||"";
+  if(s.length>180){const i=s.search(re);const a=Math.max(0,i-80);s=(a?"…":"")+s.slice(a,a+170).trim()+"…";}
+  return s;
+}
+function redItems(img,data){
+  const words=(data.words||[]).filter(w=>/[A-Za-z]/.test(w.text));
+  const out=[];let prev=null;
+  for(const w of words){
+    const t=w.text.replace(/^[^A-Za-z]+|[^A-Za-z'\-]+$/g,"");
+    if(!t||!underlined(img,w.bbox)){prev=null;continue;}
+    const sameLine=prev&&prev.line===w.line;
+    const gapRed=sameLine&&redRatio(img,prev.bbox.x1,w.bbox.x0,Math.min(prev.bbox.y1,w.bbox.y1)-2,Math.max(prev.bbox.y1,w.bbox.y1)+Math.max(6,(w.bbox.y1-w.bbox.y0)*.8))>=.6;
+    if(gapRed&&out.length){const o=out[out.length-1];o.surface+=" "+t;o.parts.push(t);}
+    else out.push({surface:t,parts:[t]});
+    prev=w;
+  }
+  return out;
+}
+async function runOCR(files,mode){
+  if(ocrBusy||!files.length)return;
+  ocrBusy=true;setOcr("写真を読みこみ中…");
+  try{
+    if(mode==="red")await loadDict();
+    const worker=await getWorker(mode==="red"?["eng"]:["eng","jpn"]);
+    const items=[];let texts=[];const seen=new Set(S.words.map(w=>norm(w.w)));const got=new Set();
+    for(let i=0;i<files.length;i++){
+      ocrStep=files.length>1?`${i+1}/${files.length}枚目を`:"";setOcr(`${ocrStep}読み取り中…`);
+      const img=await prepImage(files[i]);
+      const {data}=await worker.recognize(img.cv);
+      if(mode==="red"){
+        for(const it of redItems(img,data)){
+          const lw=it.surface.toLowerCase();
+          let w,ja;
+          if(it.parts.length>1){const hd=lemma(it.parts[0].toLowerCase());w=[hd.w].concat(it.parts.slice(1).map(s=>s.toLowerCase())).join(" ");ja=dict.w[w]||dict.w[lw]||"";}
+          else{const r=lemma(lw);w=r.w;ja=r.ja;}
+          if(got.has(w))continue;got.add(w);
+          items.push({w,ja,ex:sentenceFor(data.text,it.surface)});
+        }
+      }else texts.push(cleanJa(data.text));
+    }
+    ocrBusy=false;
+    if(mode==="red"){
+      const sn=(document.getElementById("setname")||{}).value||"";
+      preview={set:sn.trim()||"赤線",items,red:true};ocrMsg="";render();
+      if(!items.length)setOcr("赤線の単語が見つかりませんでした。赤ペンの線がはっきり写るように、明るい場所で真上から撮ってください。",true);
+      else{const miss=items.filter(x=>!x.ja).length;setOcr(`${items.length}語見つかりました${miss?`（${miss}語は意味を入れてください）`:""}`);}
+    }else{
+      draft=(draft?draft+"\n":"")+texts.join("\n");
+      const p=parseText(draft);const sn=(document.getElementById("setname")||{}).value||"";
+      preview={set:sn.trim()||p.set,items:p.items};ocrMsg="";render();
+      if(!p.items.length)setOcr("単語をうまく分けられませんでした。下の「読み取った文字」を確認するか、明るい場所で撮り直してください。",true);
+      else setOcr(`${p.items.length}語を読み取りました`);
+    }
+    const el=document.getElementById("preview");if(el&&preview.items.length)el.scrollIntoView({behavior:"smooth",block:"start"});
+  }catch(err){
+    ocrBusy=false;console.error(err);
+    setOcr(err&&err.message==="dict"?"辞書を読みこめませんでした。電波のよい場所でもう一度ためしてください。":err&&err.message==="image"?"写真を開けませんでした。別の写真でためしてください。":"読み取りに失敗しました。電波のよい場所でもう一度ためしてください。",true);
+  }
 }
 
 /* ---------- list ---------- */
@@ -667,11 +809,11 @@ document.addEventListener("click",e=>{
   }
   if(a==="commit"){
     const set=(document.getElementById("setname").value.trim()||preview.set||"追加").toUpperCase();
-    let added=0,upd=0;
+    let added=0,upd=0,skip=0;
     preview.items.forEach((_,i)=>{if(!document.getElementById("pv-c"+i).checked)return;
       const w=document.getElementById("pv-w"+i).value.trim(),ja=document.getElementById("pv-j"+i).value.trim(),ex=document.getElementById("pv-e"+i).value.trim();
-      if(!w||!ja)return;upsert(set,w,ja,ex)?added++:upd++;});
-    save();preview=null;draft="";render();toast(`${set} に${added}語を追加${upd?`・${upd}語を更新`:""}しました`);return;
+      if(!w||!ja){skip++;return;}upsert(set,w,ja,ex)?added++:upd++;});
+    save();preview=null;draft="";ocrMsg="";render();toast(`${set} に${added}語を追加${upd?`・${upd}語を更新`:""}しました${skip?`（意味が空の${skip}語はとばしました）`:""}`);return;
   }
   if(a==="add-one"){
     const w=document.getElementById("m-w").value.trim(),ja=document.getElementById("m-j").value.trim(),ex=document.getElementById("m-e").value.trim(),set=(document.getElementById("m-s").value.trim()||"追加").toUpperCase();
@@ -696,6 +838,7 @@ document.addEventListener("click",e=>{
 });
 document.addEventListener("change",e=>{
   const t=e.target;
+  if(t.dataset&&t.dataset.ocr){const fs=[...t.files];t.value="";runOCR(fs,t.dataset.ocr);return;}
   if(t.dataset&&t.dataset.type){
     S.settings.types[t.dataset.type]=t.checked;
     if(!Object.values(S.settings.types).some(Boolean)){S.settings.types[t.dataset.type]=true;t.checked=true;toast("1つ以上は選んでください");}
