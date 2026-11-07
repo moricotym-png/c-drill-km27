@@ -158,6 +158,13 @@ textarea{resize:vertical;font-size:14px}
 .empty{color:var(--muted);text-align:center;padding:30px 0}
 
 .seg{display:flex;gap:6px;flex-wrap:wrap}
+.time-rec{border-top:1px dashed var(--line);border-bottom:1px dashed var(--line);padding:10px 0;display:flex;flex-direction:column;gap:4px}
+.time-rec .label{margin:0}.time-rec .mid{margin:0}.time-rec .mid small{font-size:13px}
+.bests{padding:6px 16px}
+.best-row{display:grid;grid-template-columns:1fr auto auto;gap:10px;align-items:baseline;padding:9px 0;border-bottom:1px solid var(--line)}
+.best-row:last-child{border-bottom:0}
+.best-row span{font-weight:700;font-size:14px}.best-row b{font-family:var(--f-word);font-variant-numeric:tabular-nums}
+.best-row b small,.best-row>small{color:var(--muted);font-size:11.5px;font-weight:700}
 .soon-wait{margin:0;text-align:right;font-weight:700;color:var(--primary);line-height:1.3}
 .soon-wait small{color:var(--muted);font-weight:700}
 .seg button{border:1.5px solid var(--line);background:var(--card);border-radius:999px;padding:8px 16px;font-weight:700;font-variant-numeric:tabular-nums}
@@ -343,7 +350,7 @@ function load(){
 function save(){try{localStorage.setItem(KEY,JSON.stringify(S));storageOK=true}catch(e){storageOK=false}}
 
 /* ---------- game layer ---------- */
-const newStats=()=>({correct:0,timeMs:0,sessions:0,perfect:0,stars:0,bestCombo:0,bestStreak:0,medals:{}});
+const newStats=()=>({correct:0,timeMs:0,sessions:0,perfect:0,stars:0,bestCombo:0,bestStreak:0,medals:{},best:{}});
 function normalize(){
   S.settings=Object.assign({perDay:10,soonMin:60},S.settings||{});S.settings.types=Object.assign(defTypes(),S.settings.types||{});S.days=S.days||{};
   if(!S.stats){S.stats=newStats();S.stats.correct=Object.values(S.days).reduce((a,d)=>a+(d.c||0),0);}
@@ -389,7 +396,7 @@ function checkMedals(){
   const v=medalValues();S.stats.bestStreak=v.streak;
   return Object.keys(CATS).flatMap(c=>medalsFor(c,v[c])).filter(m=>!S.stats.medals[m.id]&&v[m.cat]>=m.n).map(m=>{S.stats.medals[m.id]=today();return m;});
 }
-function tick(){if(!Q)return;const now=Date.now(),dt=Math.min(Math.max(0,now-(Q.lastT||now)),90000);S.stats.timeMs+=dt;Q.lastT=now;
+function tick(){if(!Q)return;const now=Date.now(),dt=Math.min(Math.max(0,now-(Q.lastT||now)),90000);S.stats.timeMs+=dt;Q.act=(Q.act||0)+dt;Q.lastT=now;
   if(dt){const d=S.days[today()]||(S.days[today()]={n:0,c:0});d.t=(d.t||0)+dt;}}
 function fmtTime(ms){const m=Math.floor(ms/60000);return m<60?`${m}<small>分</small>`:`${Math.floor(m/60)}<small>時間</small>${m%60?`${m%60}<small>分</small>`:""}`;}
 function medalHTML(m,pop){const on=!!S.stats.medals[m.id];return`<div class="medal ${on?"":"off"} ${pop?"pop":""}"><i style="--mc:var(--${TC[m.t]})">${m.inner}</i><span>${m.label}</span></div>`;}
@@ -474,6 +481,7 @@ function renderHome(){
     <div class="fc">${fc.map(f=>{const[,m,dd]=f.day.split("-").map(Number);return`<div><span class="n">${f.n}</span><span class="b ${f.n?"":"zero"}" style="height:${f.n?Math.max(6,Math.round(f.n/mx*56)):3}px"></span><span class="d">${m}/${dd}</span></div>`}).join("")}</div>
     <p class="note">正解すると 翌日 → 3日後 → 1週間後 → 2週間後 → 1ヶ月後 と間隔がのび、まちがえると翌日にもどります。</p>
   </section>
+  ${bestsHTML()}
   <section><h2>メダル <span class="note">${Object.keys(S.stats.medals).length}個 獲得・上限なし</span></h2>${medalsHTML()}</section>
   <section><h2>セットごとに練習</h2>
     <div class="sets">${sets().map(([name,ws])=>{const done=ws.filter(w=>w.stage>0).length;return`<button class="set" data-act="free" data-set="${esc(name)}"><span class="set-name">${esc(name)}</span><span class="bar"><i style="width:${Math.round(done/ws.length*100)}%"></i></span><span class="set-num">${done}/${ws.length} 語 学習ずみ</span></button>`}).join("")}</div>
@@ -534,7 +542,8 @@ function settle(ok){
   Q.answered=true;Q.ok=ok;const id=Q.cur.w.id;tick();
   if(ok){S.stats.correct++;Q.combo++;Q.bestCombo=Math.max(Q.bestCombo,Q.combo);S.stats.bestCombo=Math.max(S.stats.bestCombo,Q.combo);}else Q.combo=0;
   const r=Q.res[id]||(Q.res[id]={wrong:false});
-  if(!ok){r.wrong=true;if(!Q.requeued[id]){Q.requeued[id]=1;Q.items.push({id,phase:"quiz"});}}
+  r.last=ok; // 最後に答えたときに正解したか
+  if(!ok){r.wrong=true;Q.requeued[id]=(Q.requeued[id]||0)+1;if(Q.requeued[id]<=10)Q.items.push({id,phase:"quiz"});}
   Q.n++;if(ok)Q.c++;
   const d=S.days[today()]||(S.days[today()]={n:0,c:0});d.n++;if(ok)d.c++;
   save();render();speak(Q.cur.w.w);
@@ -561,7 +570,41 @@ function finish(){
   const ids=Object.keys(Q.res);Q.total=ids.length;Q.first=ids.filter(id=>!Q.res[id].wrong).length;
   Q.rate=Q.total?Q.first/Q.total:0;Q.tier=tierOf(Q.rate);Q.stars=Q.total?Q.tier+1:0;Q.starsBefore=S.stats.stars;
   if(Q.total){S.stats.sessions++;S.stats.stars+=Q.stars;if(Q.tier===4)S.stats.perfect++;}
+  recordTime();
   Q.newMedals=checkMedals();save();Q.done=true;
+}
+
+/* ---------- 全問正解までの時間と自己ベスト ---------- */
+// 新しい単語は語数ごと、セット練習はセットごと、復習・おさらいは1語あたりの時間で比べる
+const MODE_JA={new:"新しい単語",review:"今日の復習",soon:"おさらい",free:"セット練習"};
+const fmtSec=sec=>sec<60?`${sec}秒`:`${Math.floor(sec/60)}分${sec%60?`${sec%60}秒`:""}`;
+function recKey(){return Q.mode==="new"?`new:${Q.total}`:Q.mode==="free"?`set:${Q.set}`:Q.mode;}
+function recName(k){const[m,x]=k.split(/:(.*)/);return m==="new"?`新しい単語 ${x}語`:m==="set"?`セット ${x}`:MODE_JA[m]||m;}
+function recordTime(){
+  Q.allOk=Q.total>0&&Object.values(Q.res).every(r=>r.last);
+  Q.sec=Math.max(1,Math.round((Q.act||0)/1000));
+  if(!Q.allOk)return;
+  S.stats.best=S.stats.best||{};
+  const k=recKey(),perWord=Q.mode==="review"||Q.mode==="soon";
+  const score=perWord?Q.sec/Q.total:Q.sec,old=S.stats.best[k];
+  const oldScore=old?(perWord?old.sec/old.n:old.sec):Infinity;
+  Q.prevBest=old||null;
+  if(score<oldScore){S.stats.best[k]={sec:Q.sec,n:Q.total,date:today()};Q.newBest=true;}
+}
+function timeHTML(){
+  if(!Q.total)return"";
+  const perWord=Q.mode==="review"||Q.mode==="soon",k=recKey(),b=(S.stats.best||{})[k];
+  if(!Q.allOk)return`<p class="note">かかった時間 ${fmtSec(Q.sec)}（全問正解まで行かなかったので、記録には入りません）</p>`;
+  return`<div class="time-rec${Q.newBest?" best":""}"><p class="label">全問正解までの時間</p><p class="mid">${fmtSec(Q.sec)}${perWord?`<small>（1語 ${(Q.sec/Q.total).toFixed(1)}秒）</small>`:""}</p>
+    ${Q.newBest?`<p class="rankup pop">自己ベスト更新！${Q.prevBest?`（前は ${fmtSec(Q.prevBest.sec)}${perWord?`・1語 ${(Q.prevBest.sec/Q.prevBest.n).toFixed(1)}秒`:""}）`:""}</p>`
+      :`<p class="note">自己ベスト ${fmtSec(b.sec)}${perWord?`（1語 ${(b.sec/b.n).toFixed(1)}秒）`:""}・${recName(k)}</p>`}</div>`;
+}
+function bestsHTML(){
+  const bs=Object.entries((S.stats&&S.stats.best)||{});if(!bs.length)return"";
+  const order=k=>k.startsWith("new:")?Number(k.slice(4)):k.startsWith("set:")?1e6:k==="review"?-2:-1;
+  bs.sort((a,b)=>order(a[0])-order(b[0])||a[0].localeCompare(b[0]));
+  return`<section><h2>自己ベスト <span class="note">全問正解までの時間</span></h2><div class="card bests">${bs.map(([k,b])=>{const pw=k==="review"||k==="soon";
+    return`<div class="best-row"><span>${esc(recName(k))}</span><b>${fmtSec(b.sec)}${pw?`<small> 1語${(b.sec/b.n).toFixed(1)}秒</small>`:""}</b><small>${md(b.date)}</small></div>`;}).join("")}</div></section>`;
 }
 
 function renderQuiz(){
@@ -615,6 +658,7 @@ function renderSummary(){
       <p class="tier-msg">${t.m}</p><p class="tier-sub">${t.s}</p></div>
     <div class="stats"><div class="stat"><span>正答率</span><b>${pct}<small>%</small></b></div><div class="stat"><span>最高コンボ</span><b>${Q.bestCombo}<small>連続</small></b></div><div class="stat"><span>獲得スター</span><b>★${Q.stars}</b></div></div>
     <p class="note">1回目で正解 ${Q.first} / ${Q.total} 語</p>
+    ${timeHTML()}
     ${ra>rb?`<p class="rankup pop">ランクアップ！ ${RANKS[ra].t}になりました</p>`:""}
     ${Q.newMedals.length?`<div class="newmedals"><h2>メダル獲得！</h2><div class="medals">${Q.newMedals.map(m=>medalHTML(m,true)).join("")}</div></div>`:""}
     <p>${msg}</p>
@@ -833,7 +877,7 @@ function renderList(){
 function renderSettings(){
   return `<header class="top"><div><p class="eyebrow">設定</p><h1>学習の設定</h1></div></header>
   <section class="card panel"><h2>1日に新しく覚える単語の数</h2>
-    <div class="seg">${[5,10,15,20,30,40,50].map(n=>`<button data-act="perday" data-n="${n}" class="${S.settings.perDay===n?"on":""}">${n}語</button>`).join("")}</div></section>
+    <div class="seg">${[5,10,15,20,30,40,50,75,100,125,150,200].map(n=>`<button data-act="perday" data-n="${n}" class="${S.settings.perDay===n?"on":""}">${n}語</button>`).join("")}</div></section>
   <section class="card panel"><h2>その日のうちのおさらい</h2>
     <p class="note">新しく覚えた単語とまちがえた単語を、少し時間をあけてもう一度出します。</p>
     <div class="seg">${[[0,"しない"],[30,"30分後"],[60,"1時間後"],[120,"2時間後"],[180,"3時間後"]].map(([n,l])=>`<button data-act="soonmin" data-n="${n}" class="${S.settings.soonMin===n?"on":""}">${l}</button>`).join("")}</div></section>
