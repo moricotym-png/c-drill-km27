@@ -360,7 +360,7 @@ const tierOf=r=>r<=0.7?0:r<0.8?1:r<0.9?2:r<1?3:4;
 const RANKS=[{n:0,t:"見習い",c:"--muted"},{n:20,t:"ブロンズ",c:"--bronze"},{n:60,t:"シルバー",c:"--silver"},{n:150,t:"ゴールド",c:"--gold"},{n:300,t:"プラチナ",c:"--plat"},{n:600,t:"マスター",c:"--primary"}];
 const rankOf=s=>{let r=0;RANKS.forEach((x,i)=>{if(s>=x.n)r=i;});return r;};
 const CATS={streak:"連続日数",correct:"累計正解",time:"学習時間",perfect:"満点",words:"覚えた単語"};
-const TC={b:"bronze",s:"silver",g:"gold",p:"plat"};
+const TC={b:"bronze",s:"silver",g:"gold",p:"plat",m:"primary"};
 const MEDALS=[
   ["s3","streak",3,"b","3","3日連続"],["s7","streak",7,"s","7","7日連続"],["s14","streak",14,"g","14","14日連続"],["s30","streak",30,"p","30","30日連続"],["s100","streak",100,"p","100","100日連続"],
   ["c50","correct",50,"b","50","正解50語"],["c100","correct",100,"b","100","正解100語"],["c300","correct",300,"s","300","正解300語"],["c1000","correct",1000,"g","1K","正解1000語"],["c3000","correct",3000,"p","3K","正解3000語"],
@@ -368,16 +368,38 @@ const MEDALS=[
   ["p1","perfect",1,"b","1","満点1回"],["p5","perfect",5,"s","5","満点5回"],["p10","perfect",10,"g","10","満点10回"],["p30","perfect",30,"p","30","満点30回"],["p100","perfect",100,"p","100","満点100回"],
   ["w30","words",30,"b","30","30語"],["w90","words",90,"s","90","90語"],["w200","words",200,"g","200","200語"],["w500","words",500,"p","500","500語"],["w1000","words",1000,"p","1K","1000語"]
 ].map(([id,cat,n,t,inner,label])=>({id,cat,n,t,inner,label}));
+// 最初の25個のあとも、上限なしで次のメダルが続く
+const MORE={streak:{list:[150,200,300,365,500,730,1000],step:500},correct:{list:[5000,10000,20000,30000,50000],step:25000},
+  time:{list:[3000,6000,12000,18000,30000],step:12000},perfect:{list:[150,200,300,500],step:250},words:{list:[1500,2000,3000,4000,5000],step:1000}};
+const PFX={streak:"s",correct:"c",time:"t",perfect:"p",words:"w"};
+const kfmt=n=>n>=1000?(n%1000?(n/1000).toFixed(1):n/1000)+"K":String(n);
+function mkMedal(cat,n,i){
+  const h=Math.round(n/60);
+  const inner=cat==="time"?h+"h":cat==="correct"||cat==="words"?kfmt(n):String(n);
+  const label=cat==="streak"?n+"日連続":cat==="correct"?"正解"+n+"語":cat==="time"?h+"時間":cat==="perfect"?"満点"+n+"回":n+"語";
+  return{id:PFX[cat]+n,cat,n,t:["g","p","m"][i%3],inner,label};
+}
+function medalsFor(cat,upTo){ // 取れたメダルぜんぶ＋次の1個
+  const out=MEDALS.filter(m=>m.cat===cat);if(out[out.length-1].n>upTo)return out;
+  const mo=MORE[cat],nth=i=>i<mo.list.length?mo.list[i]:mo.list[mo.list.length-1]+mo.step*(i-mo.list.length+1);
+  for(let i=0;;i++){const m=mkMedal(cat,nth(i),i);out.push(m);if(m.n>upTo)return out;}
+}
+function medalValues(){return{streak:Math.max(streak(),S.stats.bestStreak||0),correct:S.stats.correct,time:Math.floor(S.stats.timeMs/60000),perfect:S.stats.perfect,words:S.words.filter(w=>w.stage>0).length};}
 function checkMedals(){
-  const v={streak:Math.max(streak(),S.stats.bestStreak||0),correct:S.stats.correct,time:Math.floor(S.stats.timeMs/60000),perfect:S.stats.perfect,words:S.words.filter(w=>w.stage>0).length};
-  S.stats.bestStreak=v.streak;
-  return MEDALS.filter(m=>!S.stats.medals[m.id]&&v[m.cat]>=m.n).map(m=>{S.stats.medals[m.id]=today();return m;});
+  const v=medalValues();S.stats.bestStreak=v.streak;
+  return Object.keys(CATS).flatMap(c=>medalsFor(c,v[c])).filter(m=>!S.stats.medals[m.id]&&v[m.cat]>=m.n).map(m=>{S.stats.medals[m.id]=today();return m;});
 }
 function tick(){if(!Q)return;const now=Date.now(),dt=Math.min(Math.max(0,now-(Q.lastT||now)),90000);S.stats.timeMs+=dt;Q.lastT=now;
   if(dt){const d=S.days[today()]||(S.days[today()]={n:0,c:0});d.t=(d.t||0)+dt;}}
 function fmtTime(ms){const m=Math.floor(ms/60000);return m<60?`${m}<small>分</small>`:`${Math.floor(m/60)}<small>時間</small>${m%60?`${m%60}<small>分</small>`:""}`;}
 function medalHTML(m,pop){const on=!!S.stats.medals[m.id];return`<div class="medal ${on?"":"off"} ${pop?"pop":""}"><i style="--mc:var(--${TC[m.t]})">${m.inner}</i><span>${m.label}</span></div>`;}
-function medalsHTML(){return Object.entries(CATS).map(([k,c])=>`<div class="mrow"><p class="mlabel">${c}</p><div class="medals">${MEDALS.filter(m=>m.cat===k).map(m=>medalHTML(m)).join("")}</div></div>`).join("");}
+function medalsHTML(){
+  const v=medalValues();
+  return Object.entries(CATS).map(([k,c])=>{
+    const all=medalsFor(k,v[k]);let end=all.findIndex(m=>!S.stats.medals[m.id]);if(end<0)end=all.length-1;
+    const to=Math.max(5,end+1),show=all.slice(Math.max(0,to-5),to),got=all.filter(m=>S.stats.medals[m.id]).length;
+    return`<div class="mrow"><p class="mlabel">${c}<span class="note">　${got}個</span></p><div class="medals">${show.map(m=>medalHTML(m)).join("")}</div></div>`;}).join("");
+}
 function rankHTML(){
   const s=S.stats.stars,r=rankOf(s),cur=RANKS[r],nx=RANKS[r+1];
   const pct=nx?Math.round((s-cur.n)/(nx.n-cur.n)*100):100;
@@ -452,7 +474,7 @@ function renderHome(){
     <div class="fc">${fc.map(f=>{const[,m,dd]=f.day.split("-").map(Number);return`<div><span class="n">${f.n}</span><span class="b ${f.n?"":"zero"}" style="height:${f.n?Math.max(6,Math.round(f.n/mx*56)):3}px"></span><span class="d">${m}/${dd}</span></div>`}).join("")}</div>
     <p class="note">正解すると 翌日 → 3日後 → 1週間後 → 2週間後 → 1ヶ月後 と間隔がのび、まちがえると翌日にもどります。</p>
   </section>
-  <section><h2>メダル <span class="note">${Object.keys(S.stats.medals).length} / ${MEDALS.length}</span></h2>${medalsHTML()}</section>
+  <section><h2>メダル <span class="note">${Object.keys(S.stats.medals).length}個 獲得・上限なし</span></h2>${medalsHTML()}</section>
   <section><h2>セットごとに練習</h2>
     <div class="sets">${sets().map(([name,ws])=>{const done=ws.filter(w=>w.stage>0).length;return`<button class="set" data-act="free" data-set="${esc(name)}"><span class="set-name">${esc(name)}</span><span class="bar"><i style="width:${Math.round(done/ws.length*100)}%"></i></span><span class="set-num">${done}/${ws.length} 語 学習ずみ</span></button>`}).join("")}</div>
     <p class="note">セット練習は復習の予定を変えません。テスト前の確認に。</p>
