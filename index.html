@@ -102,6 +102,8 @@ mark{background:linear-gradient(transparent 58%,var(--hl) 58%);color:inherit;pad
 .fb.ng{background:var(--ng-bg);border-color:var(--ng)}
 .verdict{font-weight:900;font-size:17px}
 .fb.ok .verdict{color:var(--ok)} .fb.ng .verdict{color:var(--ng)}
+.ipa{font-family:"Lucida Sans Unicode","Segoe UI",Roboto,"Noto Sans","Helvetica Neue",Arial,sans-serif;color:var(--muted);font-size:16px;margin:2px 0 4px;letter-spacing:.02em}
+.fb .ipa{margin-top:-2px}
 .fb-word{font-family:var(--f-word);font-weight:800;font-size:22px}
 .fb-word span{font-family:var(--f-ja);font-size:15px;font-weight:700;margin-left:8px}
 .fb .ex{max-width:none;font-size:15px}
@@ -405,6 +407,15 @@ function cloze(w){
   const s=m.index+m[1].length;
   return{before:w.ex.slice(0,s),hit:m[2],after:w.ex.slice(s+m[2].length)};
 }
+// 発音記号（CMU発音辞書をもとにしたアメリカ式）。ipa.json は後から読みこむ
+let IPA=null;
+function ipaOf(w){
+  if(w.ipa)return w.ipa;if(!IPA)return"";
+  const ps=String(w.w).toLowerCase().replace(/[’]/g,"'").replace(/[^a-z' \-]/g,"").split(/[\s\-]+/).filter(Boolean);
+  const r=ps.map(x=>IPA[x]||IPA[x.replace(/'s$/,"")]||"");
+  return r.length&&r.every(Boolean)?r.join(" "):"";
+}
+const ipaHTML=w=>{const p=ipaOf(w);return p?`<p class="ipa">/${esc(p)}/</p>`:"";};
 function hlEx(w){const c=cloze(w);return c?esc(c.before)+"<mark>"+esc(c.hit)+"</mark>"+esc(c.after):esc(w.ex);}
 
 /* ---------- views ---------- */
@@ -537,14 +548,14 @@ function renderQuiz(){
   const head=`<div class="qhead"><button class="ghost" data-act="quit">やめる</button><div class="prog"><i style="width:${pct}%"></i></div><span class="count">${Math.min(Q.i+1,total)}/${total}</span></div>`;
   if(q.type==="intro")return head+`
     <article class="card qcard"><p class="kicker">新しい単語・${esc(w.set)}</p>
-      <p class="word"><mark>${esc(w.w)}</mark></p>
+      <p class="word"><mark>${esc(w.w)}</mark></p>${ipaHTML(w)}
       <button class="say" data-act="say" data-t="${esc(w.w)}">${SPK}発音</button>
       <p class="ja">${esc(w.ja)}</p>
       ${w.ex?`<p class="ex">${hlEx(w)}</p><button class="say" data-act="say" data-t="${esc(w.ex)}">${SPK}例文を聞く</button>`:""}
     </article>
     <button class="btn primary wide" data-act="next">覚えた、次へ</button>`;
   let prompt="";
-  if(q.type==="en2ja")prompt=`<p class="kicker">意味はどれ？</p><p class="word">${esc(w.w)}</p><button class="say" data-act="say" data-t="${esc(w.w)}">${SPK}発音</button>`;
+  if(q.type==="en2ja")prompt=`<p class="kicker">意味はどれ？</p><p class="word">${esc(w.w)}</p>${ipaHTML(w)}<button class="say" data-act="say" data-t="${esc(w.w)}">${SPK}発音</button>`;
   if(q.type==="ja2en")prompt=`<p class="kicker">英語はどれ？</p><p class="ja" style="font-size:22px">${esc(w.ja)}</p>`;
   if(q.type==="cloze")prompt=`<p class="kicker">空らんに入る語は？</p><p class="ex cz">${esc(q.cz.before)}<span class="blank">${Q.answered?esc(q.cz.hit):"&nbsp;"}</span>${esc(q.cz.after)}</p>`;
   if(q.type==="listen")prompt=`<p class="kicker">聞こえた単語の意味は？</p><button class="play" data-act="say" data-t="${esc(w.w)}" aria-label="もう一度聞く">${SPK}</button><p class="hint">ボタンでもう一度聞けます</p>`;
@@ -562,7 +573,7 @@ function renderQuiz(){
     const last=Q.i>=Q.items.length-1;
     fb=`<div class="fb ${Q.ok?"ok":"ng"}"><p class="verdict">${Q.ok?"正解！":"ざんねん"}${Q.ok&&Q.combo>=3?`<span class="combo pop">${Q.combo}連続正解！</span>`:""}</p>
       ${!Q.ok&&q.type==="spell"?`<p class="hint">あなたの答え：${esc(Q.typed||"（空らん）")}</p>`:""}
-      <p class="fb-word">${esc(w.w)}<span>${esc(w.ja)}</span></p>
+      <p class="fb-word">${esc(w.w)}<span>${esc(w.ja)}</span></p>${ipaHTML(w)}
       ${w.ex?`<p class="ex">${hlEx(w)}</p>`:""}
       <div class="row-btns"><button class="say" data-act="say" data-t="${esc(w.w)}">${SPK}発音</button>${w.ex?`<button class="say" data-act="say" data-t="${esc(w.ex)}">${SPK}例文</button>`:""}</div>
       ${!Q.ok?`<p class="hint">このあともう一度出ます。</p>`:""}
@@ -783,7 +794,7 @@ function rowsHTML(){
   return ws.map(w=>{
     const open=openId===w.id;
     return `<div class="wrow"><button class="wrow-main" data-act="toggle" data-id="${w.id}" aria-expanded="${open}"><span class="ww">${esc(w.w)}</span><span class="wj">${esc(w.ja)}</span><span class="chip s${w.stage}">${LV[w.stage]}</span></button>
-    ${open?`<div class="wdet"><p class="ja" style="font-size:15px">${esc(w.ja)}</p>${w.ex?`<p class="ex">${hlEx(w)}</p>`:""}
+    ${open?`<div class="wdet">${ipaHTML(w)}<p class="ja" style="font-size:15px">${esc(w.ja)}</p>${w.ex?`<p class="ex">${hlEx(w)}</p>`:""}
       <p class="meta">${esc(w.set)}・${w.stage?`次の復習 ${md(w.due)}`:"まだ学習していません"}・正解 ${w.ok} / ミス ${w.ng}</p>
       <div class="row-btns"><button class="say" data-act="say" data-t="${esc(w.w)}">${SPK}発音</button>${w.ex?`<button class="say" data-act="say" data-t="${esc(w.ex)}">${SPK}例文</button>`:""}
       <button class="btn ${confirmDel===w.id?"primary":""} danger" data-act="del" data-id="${w.id}" style="padding:6px 14px">${confirmDel===w.id?"本当に削除する":"削除"}</button></div></div>`:""}</div>`;
@@ -890,6 +901,10 @@ setInterval(()=>{if(view==="home"&&!Q&&soonAll().length)render();},30000);
 document.addEventListener("visibilitychange",()=>{if(!document.hidden&&!Q){if(!preview)load();render();}});
 
 load();save();render();
+fetch("ipa.json").then(r=>r.ok?r.json():null).then(o=>{if(!o)return;IPA=o;
+  if(view==="add"&&!Q)return; // 入力中の欄を消さない
+  if(Q&&!Q.answered&&Q.cur&&Q.cur.type==="spell")return;
+  render();}).catch(()=>{});
 </script>
 
 </body>
