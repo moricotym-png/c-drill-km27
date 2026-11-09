@@ -938,7 +938,7 @@ function aiCardHTML(){
       <li>ここに戻って「② 貼りつけて取りこむ」を押す</li></ol>
     <button class="btn wide" data-act="ai-copy">① 頼む文章をコピー</button>
     <button class="btn primary wide" data-act="ai-paste">② 貼りつけて取りこむ</button>
-    <label class="btn wide photo"><input type="file" accept=".json,.txt,application/json,text/plain" data-aifile>ファイルから取りこむ</label>
+    <label class="btn wide photo"><input type="file" data-aifile>ファイルから取りこむ</label>
     <details${aiFallback?" open":""}><summary class="note">うまくコピー・貼りつけできないとき</summary>
       <textarea id="ai-text" rows="5" placeholder="ここに長押しで貼りつけ"></textarea>
       <button class="btn wide" data-act="ai-take">この内容で取りこむ</button></details>
