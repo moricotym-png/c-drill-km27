@@ -1061,8 +1061,12 @@ document.addEventListener("click",e=>{
 });
 document.addEventListener("change",e=>{
   const t=e.target;
-  if(t.dataset&&t.dataset.aifile!==undefined){const f=t.files[0];t.value="";if(!f)return;
-    f.text().then(aiTake).catch(()=>toast("ファイルを読めませんでした"));return;}
+  if(t.dataset&&t.dataset.aifile!==undefined){const f=t.files&&t.files[0];if(!f){toast("ファイルが選ばれていません");return;}
+    toast(`${f.name} を読みこみ中…`);
+    const done=txt=>{t.value="";if(!txt||!txt.trim()){toast("ファイルの中身が空でした");return;}aiTake(txt);};
+    const fail=err=>{t.value="";toast("ファイルを読めませんでした（"+((err&&err.message)||"不明")+"）。一度スマホに保存してから選んでください");};
+    try{const r=new FileReader();r.onload=()=>done(String(r.result||""));r.onerror=()=>fail(r.error);r.readAsText(f,"utf-8");}catch(err){fail(err);}
+    return;}
   if(t.dataset&&t.dataset.ocr){const fs=[...t.files];t.value="";runOCR(fs,t.dataset.ocr);return;}
   if(t.dataset&&t.dataset.type){
     S.settings.types[t.dataset.type]=t.checked;
