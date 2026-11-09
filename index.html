@@ -355,7 +355,19 @@ function load(){
   catch(e){storageOK=false}
   S=fresh();normalize();
 }
-function save(){try{localStorage.setItem(KEY,JSON.stringify(S));storageOK=true}catch(e){storageOK=false}}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(S));storageOK=true}catch(e){storageOK=false}saveQ();}
+// 解いている途中の1回分も保存して、アプリを閉じても続きからできるようにする
+const QKEY="c-drill-q";
+function saveQ(){try{
+  if(typeof Q==="undefined"||!Q||Q.done){localStorage.removeItem(QKEY);return;}
+  const o=Object.assign({},Q);delete o.cur;o.savedAt=Date.now();o.day=today();
+  localStorage.setItem(QKEY,JSON.stringify(o));}catch(e){}}
+function restoreQ(){try{
+  const o=JSON.parse(localStorage.getItem(QKEY)||"null");
+  if(!o||!Array.isArray(o.items)||o.day!==today()||Date.now()-o.savedAt>12*3600000){localStorage.removeItem(QKEY);return false;}
+  delete o.savedAt;delete o.day;Q=o;Q.lastT=Date.now();Q.newMedals=Q.newMedals||[];
+  if(Q.answered)Q.i++; // 答えたところまでは記録ずみなので、次の問題から
+  prepare();return true;}catch(e){localStorage.removeItem(QKEY);return false;}}
 
 /* ---------- game layer ---------- */
 const newStats=()=>({correct:0,timeMs:0,sessions:0,perfect:0,stars:0,bestCombo:0,bestStreak:0,medals:{},best:{}});
@@ -516,7 +528,7 @@ function startSession(mode,set){
   else items=shuffle(S.words.filter(w=>w.set===set)).map(w=>({id:w.id,phase:"quiz"}));
   if(!items.length)return;
   Q={mode,set,items,i:0,res:{},requeued:{},n:0,c:0,done:false,combo:0,bestCombo:0,lastT:Date.now(),newMedals:[]};
-  prepare();render();window.scrollTo(0,0);speakCurrent();
+  prepare();saveQ();render();window.scrollTo(0,0);speakCurrent();
 }
 function prepare(){
   const it=Q.items[Q.i];if(!it){finish();return;}
@@ -556,7 +568,7 @@ function settle(ok){
   const d=S.days[today()]||(S.days[today()]={n:0,c:0});d.n++;if(ok)d.c++;
   save();render();speak(Q.cur.w.w);
 }
-function next(){tick();Q.i++;prepare();render();window.scrollTo(0,0);speakCurrent();}
+function next(){tick();Q.i++;prepare();saveQ();render();window.scrollTo(0,0);speakCurrent();}
 function applySRS(){
   if(!Q||Q.mode==="free"||Q.applied)return;Q.applied=true;const t=today();
   const gap=(S.settings.soonMin||0)*60000,later=Date.now()+gap;
@@ -1084,9 +1096,11 @@ document.addEventListener("keydown",e=>{
 });
 setInterval(()=>{if(view==="home"&&!Q&&soonAll().length)render();},30000);
 // 成長ログが単語を足していることがあるので、開き直したときは保存データを読み直す
-document.addEventListener("visibilitychange",()=>{if(!document.hidden&&!Q){if(!preview)load();render();}});
+document.addEventListener("visibilitychange",()=>{if(document.hidden){tick();saveQ();return;}if(!Q){if(!preview)load();render();}});
+window.addEventListener("pagehide",()=>{tick();saveQ();});
 
-load();save();render();
+load();const resumed=restoreQ();save();render();
+if(resumed&&!Q.done)toast("途中から再開しました");
 fetch("ipa.json").then(r=>r.ok?r.json():null).then(o=>{if(!o)return;IPA=o;
   if(view==="add"&&!Q)return; // 入力中の欄を消さない
   if(Q&&!Q.answered&&Q.cur&&Q.cur.type==="spell")return;
