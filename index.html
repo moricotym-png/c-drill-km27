@@ -119,6 +119,7 @@ mark{background:linear-gradient(transparent 58%,var(--hl) 58%);color:inherit;pad
 .ai h2{margin:0}.ai .tag{font-size:11px;background:var(--primary);color:var(--on-primary);border-radius:999px;padding:2px 8px;vertical-align:middle;margin-left:4px}
 .ai details textarea{margin-top:6px}.ai details .btn{margin-top:8px}
 .sub-h{font-size:15px;margin:8px 0 0}
+.pv-set{font-size:13px;padding:6px 10px}
 .pv-meta{font-size:12px;color:var(--muted);line-height:1.4}
 .tip{font-size:13px;color:var(--muted);margin:6px 0 0;text-align:left}
 .photo{display:flex;align-items:center;justify-content:center;gap:8px;cursor:pointer;box-sizing:border-box;white-space:normal;text-align:center}
@@ -701,9 +702,10 @@ function previewHTML(){
   if(!preview)return"";
   if(!preview.items.length)return preview.red?"":`<p class="warn">単語が見つかりませんでした。単語・意味・例文が入った部分をコピーしているか確認してください。</p>`;
   const have=new Set(S.words.map(w=>norm(w.w)));
-  return `<section class="pv"><h2>読み取った単語（${preview.items.length}語）</h2><p class="note">まちがいがあれば直してから追加してください。チェックを外した語は追加されません。</p>
+  const gl=preview.groups?[...new Set(preview.items.map(it=>it.set||"（セットなし）"))].map(g=>`${esc(g)} ${preview.items.filter(it=>(it.set||"（セットなし）")===g).length}語`).join("・"):"";
+  return `<section class="pv"><h2>読み取った単語（${preview.items.length}語）</h2>${gl?`<p class="note">セットに分けて追加します：${gl}</p>`:""}<p class="note">まちがいがあれば直してから追加してください。チェックを外した語は追加されません。</p>
     ${preview.items.map((it,i)=>{const dup=have.has(norm(it.w));return`<div class="card pv-row" data-i="${i}"><input type="checkbox" id="pv-c${i}" ${dup?"":"checked"} aria-label="${esc(it.w)}を追加">
-      <div class="inputs"><input type="text" class="w" id="pv-w${i}" value="${esc(it.w)}" aria-label="英単語"><input type="text" id="pv-j${i}" value="${esc(it.ja)}" placeholder="意味を入れてください" aria-label="意味"><input type="text" id="pv-e${i}" value="${esc(it.ex)}" aria-label="例文">${it.ipa||it.pos?`<span class="pv-meta">${it.ipa?`/${esc(it.ipa)}/ `:""}${esc(it.pos||"")}</span>`:""}${it.note?`<span class="pv-meta">💡 ${esc(it.note)}</span>`:""}${dup?'<span class="dup">すでに登録ずみ（チェックすると意味と例文を上書き）</span>':""}</div></div>`}).join("")}
+      <div class="inputs"><input type="text" class="w" id="pv-w${i}" value="${esc(it.w)}" aria-label="英単語"><input type="text" id="pv-j${i}" value="${esc(it.ja)}" placeholder="意味を入れてください" aria-label="意味"><input type="text" id="pv-e${i}" value="${esc(it.ex)}" aria-label="例文">${preview.groups?`<input type="text" class="pv-set" id="pv-s${i}" value="${esc(it.set||"")}" placeholder="セット" aria-label="セット">`:""}${it.ipa||it.pos?`<span class="pv-meta">${it.ipa?`/${esc(it.ipa)}/ `:""}${esc(it.pos||"")}</span>`:""}${it.note?`<span class="pv-meta">💡 ${esc(it.note)}</span>`:""}${dup?'<span class="dup">すでに登録ずみ（チェックすると意味と例文を上書き）</span>':""}</div></div>`}).join("")}
     <button class="btn primary wide" data-act="commit">チェックした単語を追加</button></section>`;
 }
 function renderAdd(){
@@ -717,7 +719,7 @@ function renderAdd(){
   </div>
   <p class="note">カメラで撮るか、写真アプリから選べます（何枚かまとめて選んでもOK）。赤線モードは、赤ペンで線を引いた単語だけを拾って、意味を辞書から入れます。</p>
   <div id="ocr-status">${ocrStatusHTML()}</div>
-  <div class="field"><label class="label" for="setname">セット名（空らんなら自動で読み取り）</label><input type="text" id="setname" placeholder="例：C10" value="${esc(preview?preview.set:"")}"></div>
+  <div class="field"><label class="label" for="setname">${preview&&preview.groups?"本の名前（入れるとセット名の前につきます）":"セット名（空らんなら自動で読み取り）"}</label><input type="text" id="setname" placeholder="例：C10" value="${esc(preview?preview.set:"")}"></div>
   <div id="preview">${previewHTML()}</div>
   <details class="card manual"${draft&&!preview?" open":""}><summary>コピーした文字を貼りつける${draft?"（読み取った文字）":""}</summary>
     <ol class="steps-ol">
@@ -878,10 +880,11 @@ red:`These are photos of pages from an English text. The reader underlines words
    - meaning_en: a short, simple English definition.
    - sentence: the full sentence from the page that contains it, copied exactly.
    - note: one short Japanese line on nuance, common collocations, or a confusable word. Empty string if nothing useful.
-3. "set": leave as an empty string.`,
-list:`These are photos of an English vocabulary list (word book or app screen).
+   - set: empty string.
+3. Top-level "set": empty string.`,
+list:`These are photos of an English vocabulary book or word list (book pages or app screens). One of the photos may be the table of contents.
 
-1. Include EVERY English word or phrase in the list, in the order shown. Do not skip any.
+1. Include EVERY English word or phrase in the list, in the order shown. Do not skip any. Do not include words that only appear in the table of contents.
 2. For each one, fill in:
    - word: as printed.
    - surface: same as word.
@@ -891,11 +894,12 @@ list:`These are photos of an English vocabulary list (word book or app screen).
    - meaning_en: a short, simple English definition.
    - sentence: the example sentence printed with it. If none is printed, write one short natural example sentence.
    - note: empty string.
-3. "set": the set or unit name if one is shown (for example "C12"), otherwise an empty string.`};
+   - set: the chapter / unit / section this word belongs to, as a short name. If a table of contents is included, use its headings and match each word by the page number or heading shown on its page (for example "Unit 3 環境・自然" or "第2章 動詞"). If there is no table of contents, use the heading shown on the page. Empty string if you cannot tell.
+3. Top-level "set": the name of the book or list if shown (for example "ターゲット1900" or "C12"), otherwise an empty string.`};
 const AI_FORMAT=`
 
 At the end, output ONLY this JSON in a single \`\`\`json code block so I can import it into my vocabulary app (C単語ドリル). Do not rename the keys.
-{"set":"","words":[{"word":"","surface":"","reading":"","pos":"","meaning_ja":"","meaning_en":"","sentence":"","note":""}],"questions":[]}`;
+{"set":"","words":[{"word":"","surface":"","reading":"","pos":"","meaning_ja":"","meaning_en":"","sentence":"","note":"","set":""}],"questions":[]}`;
 const aiPrompt=m=>AI_PROMPT[m]+AI_FORMAT;
 function parseAiReply(text){
   const block=text.match(/```(?:json)?\s*([\s\S]*?)```/);const body=block?block[1]:text;
@@ -903,23 +907,24 @@ function parseAiReply(text){
   const d=JSON.parse(body.slice(a,b+1)),str=v=>v==null?"":String(v).trim();
   const items=(Array.isArray(d.words)?d.words:[]).filter(w=>w&&(w.word||w.surface)).map(w=>({
     w:str(w.word||w.surface),ja:str(w.meaning_ja||w.meaning),ex:str(w.sentence),
-    ipa:str(w.reading).replace(/^\/+|\/+$/g,"").replace(/^\[|\]$/g,""),pos:str(w.pos),note:str(w.note)}));
+    ipa:str(w.reading).replace(/^\/+|\/+$/g,"").replace(/^\[|\]$/g,""),pos:str(w.pos),note:str(w.note),set:str(w.set)}));
   const seen=new Set();return{set:str(d.set),items:items.filter(it=>{const k=norm(it.w);if(seen.has(k))return false;seen.add(k);return true;})};
 }
 function aiTake(text){
   let r;try{r=parseAiReply(text);}catch(e){toast("まとめの部分が見つかりませんでした。返事の最後のコード欄をコピーしてください");return;}
   if(!r.items.length){toast("取りこめる単語が見つかりませんでした");return;}
   const sn=((document.getElementById("setname")||{}).value||"").trim();
-  preview={set:sn||r.set||(aiMode==="red"?"赤線":""),items:r.items,ai:true};aiFallback=false;ocrMsg="";render();
+  const groups=new Set(r.items.map(it=>it.set).filter(Boolean)).size;
+  preview={set:sn||r.set||(aiMode==="red"?"赤線":""),items:r.items,ai:true,groups};aiFallback=false;ocrMsg="";render();
   const el=document.getElementById("preview");if(el)el.scrollIntoView({behavior:"smooth",block:"start"});
   toast(`${r.items.length}語を読みこみました`);
 }
 function aiCardHTML(){
   return`<section class="card ai"><h2>Claudeのアプリで読み取る <span class="tag">いちばん正確</span></h2>
-    <div class="seg">${[["red","長文の赤線の単語"],["list","単語リスト"]].map(([k,l])=>`<button data-act="aimode" data-m="${k}" class="${aiMode===k?"on":""}">${l}</button>`).join("")}</div>
+    <div class="seg">${[["red","長文の赤線の単語"],["list","単語帳・リスト"]].map(([k,l])=>`<button data-act="aimode" data-m="${k}" class="${aiMode===k?"on":""}">${l}</button>`).join("")}</div>
     <ol class="steps-ol">
       <li>「① 頼む文章をコピー」を押す</li>
-      <li>Claudeのアプリで${aiMode==="red"?"赤線を引いたページ":"単語リスト"}の写真を付けて、文章を貼りつけて送る（何枚でもOK）</li>
+      <li>Claudeのアプリで${aiMode==="red"?"赤線を引いたページ":"単語帳のページ"}の写真を付けて、文章を貼りつけて送る（何枚でもOK）${aiMode==="list"?'<span class="note">目次の写真もいっしょに付けると、章ごとにセットを分けます</span>':""}</li>
       <li>返事の最後のまとめ（コード欄）の右上のコピーボタンを押す</li>
       <li>ここに戻って「② 貼りつけて取りこむ」を押す</li></ol>
     <button class="btn wide" data-act="ai-copy">① 頼む文章をコピー</button>
@@ -1002,13 +1007,17 @@ document.addEventListener("click",e=>{
     try{navigator.clipboard.readText().then(t=>t&&t.trim()?aiTake(t):toast("コピーされた内容がありません"),fb);}catch(e){fb();}return;}
   if(a==="ai-take"){aiTake(document.getElementById("ai-text").value);return;}
   if(a==="commit"){
-    const set=(document.getElementById("setname").value.trim()||preview.set||"追加").toUpperCase();
+    const up=x=>/^[a-z]+\d+$/i.test(x)?x.toUpperCase():x;
+    const top=up(document.getElementById("setname").value.trim()||preview.set||"");
+    const set=top||"追加";const used=new Set();
     let added=0,upd=0,skip=0;
     preview.items.forEach((_,i)=>{if(!document.getElementById("pv-c"+i).checked)return;
       const w=document.getElementById("pv-w"+i).value.trim(),ja=document.getElementById("pv-j"+i).value.trim(),ex=document.getElementById("pv-e"+i).value.trim();
       if(!w||!ja){skip++;return;}const it=preview.items[i],same=norm(it.w)===norm(w);
-      upsert(set,w,ja,ex,same?{ipa:it.ipa,note:it.note}:null)?added++:upd++;});
-    save();preview=null;draft="";ocrMsg="";render();toast(`${set} に${added}語を追加${upd?`・${upd}語を更新`:""}しました${skip?`（意味が空の${skip}語はとばしました）`:""}`);return;
+      const sub=preview.groups?((document.getElementById("pv-s"+i)||{}).value||"").trim():"";
+      const ws=sub?(top?top+" "+sub:sub):set;used.add(ws);
+      upsert(ws,w,ja,ex,same?{ipa:it.ipa,note:it.note}:null)?added++:upd++;});
+    save();preview=null;draft="";ocrMsg="";render();toast(`${used.size>1?`${used.size}つのセットに`:([...used][0]||set)+" に"}${added}語を追加${upd?`・${upd}語を更新`:""}しました${skip?`（意味が空の${skip}語はとばしました）`:""}`);return;
   }
   if(a==="add-one"){
     const w=document.getElementById("m-w").value.trim(),ja=document.getElementById("m-j").value.trim(),ex=document.getElementById("m-e").value.trim(),set=(document.getElementById("m-s").value.trim()||"追加").toUpperCase();
