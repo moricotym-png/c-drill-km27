@@ -119,6 +119,7 @@ mark{background:linear-gradient(transparent 58%,var(--hl) 58%);color:inherit;pad
 .ai h2{margin:0}.ai .tag{font-size:11px;background:var(--primary);color:var(--on-primary);border-radius:999px;padding:2px 8px;vertical-align:middle;margin-left:4px}
 .ai details textarea{margin-top:6px}.ai details .btn{margin-top:8px}
 .sub-h{font-size:15px;margin:8px 0 0}
+.pv-big{padding:12px 14px;display:flex;flex-direction:column;gap:4px;font-size:14px}.pv-big p{margin:0}
 .pv-set{font-size:13px;padding:6px 10px}
 .pv-meta{font-size:12px;color:var(--muted);line-height:1.4}
 .tip{font-size:13px;color:var(--muted);margin:6px 0 0;text-align:left}
@@ -698,11 +699,19 @@ function parseText(txt){
   push();
   return{set,items:out};
 }
+const BIG=120;
 function previewHTML(){
   if(!preview)return"";
   if(!preview.items.length)return preview.red?"":`<p class="warn">単語が見つかりませんでした。単語・意味・例文が入った部分をコピーしているか確認してください。</p>`;
   const have=new Set(S.words.map(w=>norm(w.w)));
   const gl=preview.groups?[...new Set(preview.items.map(it=>it.set||"（セットなし）"))].map(g=>`${esc(g)} ${preview.items.filter(it=>(it.set||"（セットなし）")===g).length}語`).join("・"):"";
+  if(preview.items.length>BIG){
+    const nNew=preview.items.filter(it=>!have.has(norm(it.w))).length;
+    return`<section class="pv"><h2>読みこんだ単語（${preview.items.length}語）</h2>${gl?`<p class="note">セットに分けて追加します：${gl}</p>`:""}
+      <div class="card pv-big">${preview.items.slice(0,30).map(it=>`<p><b>${esc(it.w)}</b> ${esc(it.ja)}</p>`).join("")}<p class="note">…ほか ${preview.items.length-30}語</p></div>
+      <p class="note">語数が多いので、まとめて追加します。すでに登録ずみの${preview.items.length-nNew}語はそのままにします。追加したあと「一覧」で直せます。</p>
+      <button class="btn primary wide" data-act="commit-big">${nNew}語をまとめて追加</button></section>`;
+  }
   return `<section class="pv"><h2>読み取った単語（${preview.items.length}語）</h2>${gl?`<p class="note">セットに分けて追加します：${gl}</p>`:""}<p class="note">まちがいがあれば直してから追加してください。チェックを外した語は追加されません。</p>
     ${preview.items.map((it,i)=>{const dup=have.has(norm(it.w));return`<div class="card pv-row" data-i="${i}"><input type="checkbox" id="pv-c${i}" ${dup?"":"checked"} aria-label="${esc(it.w)}を追加">
       <div class="inputs"><input type="text" class="w" id="pv-w${i}" value="${esc(it.w)}" aria-label="英単語"><input type="text" id="pv-j${i}" value="${esc(it.ja)}" placeholder="意味を入れてください" aria-label="意味"><input type="text" id="pv-e${i}" value="${esc(it.ex)}" aria-label="例文">${preview.groups?`<input type="text" class="pv-set" id="pv-s${i}" value="${esc(it.set||"")}" placeholder="セット" aria-label="セット">`:""}${it.ipa||it.pos?`<span class="pv-meta">${it.ipa?`/${esc(it.ipa)}/ `:""}${esc(it.pos||"")}</span>`:""}${it.note?`<span class="pv-meta">💡 ${esc(it.note)}</span>`:""}${dup?'<span class="dup">すでに登録ずみ（チェックすると意味と例文を上書き）</span>':""}</div></div>`}).join("")}
@@ -929,6 +938,7 @@ function aiCardHTML(){
       <li>ここに戻って「② 貼りつけて取りこむ」を押す</li></ol>
     <button class="btn wide" data-act="ai-copy">① 頼む文章をコピー</button>
     <button class="btn primary wide" data-act="ai-paste">② 貼りつけて取りこむ</button>
+    <label class="btn wide photo"><input type="file" accept=".json,.txt,application/json,text/plain" data-aifile>ファイルから取りこむ</label>
     <details${aiFallback?" open":""}><summary class="note">うまくコピー・貼りつけできないとき</summary>
       <textarea id="ai-text" rows="5" placeholder="ここに長押しで貼りつけ"></textarea>
       <button class="btn wide" data-act="ai-take">この内容で取りこむ</button></details>
@@ -1006,6 +1016,14 @@ document.addEventListener("click",e=>{
     const fb=()=>{aiFallback=true;render();document.getElementById("ai-text").focus();toast("下の欄に長押しで貼りつけて、「この内容で取りこむ」を押してください");};
     try{navigator.clipboard.readText().then(t=>t&&t.trim()?aiTake(t):toast("コピーされた内容がありません"),fb);}catch(e){fb();}return;}
   if(a==="ai-take"){aiTake(document.getElementById("ai-text").value);return;}
+  if(a==="commit-big"){
+    const up=x=>/^[a-z]+\d+$/i.test(x)?x.toUpperCase():x;
+    const top=up(document.getElementById("setname").value.trim()||preview.set||"");
+    const have=new Set(S.words.map(w=>norm(w.w))),used=new Set();let added=0;
+    preview.items.forEach(it=>{if(!it.w||!it.ja||have.has(norm(it.w)))return;have.add(norm(it.w));
+      const ws=it.set?(top?top+" "+it.set:it.set):(top||"追加");used.add(ws);
+      S.words.push(Object.assign({id:uid(),set:ws,w:it.w,ja:it.ja,ex:it.ex||"",stage:0,due:null,ok:0,ng:0,learned:null},it.ipa?{ipa:it.ipa}:{},it.note?{note:it.note}:{}));added++;});
+    save();preview=null;draft="";ocrMsg="";render();toast(`${used.size}セットに${added}語を追加しました`);return;}
   if(a==="commit"){
     const up=x=>/^[a-z]+\d+$/i.test(x)?x.toUpperCase():x;
     const top=up(document.getElementById("setname").value.trim()||preview.set||"");
@@ -1017,7 +1035,7 @@ document.addEventListener("click",e=>{
       const sub=preview.groups?((document.getElementById("pv-s"+i)||{}).value||"").trim():"";
       const ws=sub?(top?top+" "+sub:sub):set;used.add(ws);
       upsert(ws,w,ja,ex,same?{ipa:it.ipa,note:it.note}:null)?added++:upd++;});
-    save();preview=null;draft="";ocrMsg="";render();toast(`${used.size>1?`${used.size}つのセットに`:([...used][0]||set)+" に"}${added}語を追加${upd?`・${upd}語を更新`:""}しました${skip?`（意味が空の${skip}語はとばしました）`:""}`);return;
+    save();preview=null;draft="";ocrMsg="";render();toast(`${used.size>1?`${used.size}セットに`:([...used][0]||set)+" に"}${added}語を追加${upd?`・${upd}語を更新`:""}しました${skip?`（意味が空の${skip}語はとばしました）`:""}`);return;
   }
   if(a==="add-one"){
     const w=document.getElementById("m-w").value.trim(),ja=document.getElementById("m-j").value.trim(),ex=document.getElementById("m-e").value.trim(),set=(document.getElementById("m-s").value.trim()||"追加").toUpperCase();
@@ -1043,6 +1061,8 @@ document.addEventListener("click",e=>{
 });
 document.addEventListener("change",e=>{
   const t=e.target;
+  if(t.dataset&&t.dataset.aifile!==undefined){const f=t.files[0];t.value="";if(!f)return;
+    f.text().then(aiTake).catch(()=>toast("ファイルを読めませんでした"));return;}
   if(t.dataset&&t.dataset.ocr){const fs=[...t.files];t.value="";runOCR(fs,t.dataset.ocr);return;}
   if(t.dataset&&t.dataset.type){
     S.settings.types[t.dataset.type]=t.checked;
