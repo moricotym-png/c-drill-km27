@@ -168,6 +168,13 @@ textarea{resize:vertical;font-size:14px}
 .empty{color:var(--muted);text-align:center;padding:30px 0}
 
 .seg{display:flex;gap:6px;flex-wrap:wrap}
+.grade-q{margin:4px 0 0;text-align:center;font-weight:700;font-size:14px;color:var(--muted)}
+.grades{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.grade{display:flex;flex-direction:column;align-items:center;gap:2px;padding:10px 4px;border-radius:16px;white-space:normal;line-height:1.2}
+.grade b{font-size:20px}.grade small{font-size:10.5px;font-weight:700;opacity:.8}
+.g-perfect{border-color:var(--ok,#1a7f4b);color:var(--ok,#1a7f4b)}
+.g-unsure{border-color:#c77c02;color:#c77c02}
+.known-btn{margin-top:8px}
 .time-rec{border-top:1px dashed var(--line);border-bottom:1px dashed var(--line);padding:10px 0;display:flex;flex-direction:column;gap:4px}
 .time-rec .label{margin:0}.time-rec .mid{margin:0}.time-rec .mid small{font-size:13px}
 .bests{padding:6px 16px}
@@ -374,7 +381,7 @@ function restoreQ(){try{
 /* ---------- game layer ---------- */
 const newStats=()=>({correct:0,timeMs:0,sessions:0,perfect:0,stars:0,bestCombo:0,bestStreak:0,medals:{},best:{}});
 function normalize(){
-  S.settings=Object.assign({perDay:10,soonMin:60},S.settings||{});S.settings.types=Object.assign(defTypes(),S.settings.types||{});S.days=S.days||{};
+  S.settings=Object.assign({perDay:10,soonMin:60,slowSec:5},S.settings||{});S.settings.types=Object.assign(defTypes(),S.settings.types||{});S.days=S.days||{};
   if(!S.stats){S.stats=newStats();S.stats.correct=Object.values(S.days).reduce((a,d)=>a+(d.c||0),0);}
   else{S.stats=Object.assign(newStats(),S.stats);S.stats.medals=S.stats.medals||{};}
   checkMedals();
@@ -535,7 +542,7 @@ function startSession(mode,set){
 function prepare(){
   const it=Q.items[Q.i];if(!it){finish();return;}
   const w=byId(it.id);if(!w){Q.i++;return prepare();}
-  Q.answered=false;Q.pick=null;Q.typed="";
+  Q.answered=false;Q.pick=null;Q.typed="";Q.slow=false;Q.shownAt=Date.now();
   Q.cur=it.phase==="intro"?{type:"intro",w}:buildQ(chooseType(w),w);
 }
 function chooseType(w){
@@ -566,23 +573,44 @@ function settle(ok){
   if(ok){S.stats.correct++;Q.combo++;Q.bestCombo=Math.max(Q.bestCombo,Q.combo);S.stats.bestCombo=Math.max(S.stats.bestCombo,Q.combo);}else Q.combo=0;
   const r=Q.res[id]||(Q.res[id]={wrong:false});
   r.last=ok; // 最後に答えたときに正解したか
-  if(!ok){r.wrong=true;Q.requeued[id]=(Q.requeued[id]||0)+1;if(Q.requeued[id]<=10)Q.items.push({id,phase:"quiz"});}
+  // 考えた時間。設定の秒数をこえたら、正解でも「うろ覚え」扱い（つづりは3倍まで待つ）
+  const sec=(Date.now()-(Q.shownAt||Date.now()))/1000,lim=(S.settings.slowSec||0)*(Q.cur.type==="spell"?3:1);
+  Q.sec=Math.round(sec);Q.slow=ok&&lim>0&&sec>lim&&Q.mode!=="free";
+  if(!ok){r.wrong=true;r.grade="bad";Q.requeued[id]=(Q.requeued[id]||0)+1;if(Q.requeued[id]<=10)Q.items.push({id,phase:"quiz"});}
+  else if(Q.slow){r.grade="unsure";}
+  else r.grade="ok";
   Q.n++;if(ok)Q.c++;
   const d=S.days[today()]||(S.days[today()]={n:0,c:0});d.n++;if(ok)d.c++;
   save();render();speak(Q.cur.w.w);
+  const nb=document.querySelector(".grades")||document.getElementById("nextbtn");
+  if(nb)setTimeout(()=>nb.scrollIntoView({block:"end",behavior:"smooth"}),50);
 }
 function next(){tick();Q.i++;prepare();saveQ();render();window.scrollTo(0,0);speakCurrent();}
+// 自分で決める3段階：◎完璧（もう出さない＝3ヶ月後に確認）・○OK（いつもの間隔）・▲うろ覚え（明日もう一度）
+function grade(g){
+  const id=Q.cur.w.id,r=Q.res[id];if(!r)return next();
+  r.grade=g;
+  if(g==="perfect"){Q.items=Q.items.filter((it,k)=>k<=Q.i||it.id!==id);} // この回ではもう出さない
+  next();
+}
+function known(){ // 新しい単語の紹介で「もう知ってる」
+  const w=Q.cur.w,t=today();w.stage=6;w.due=addDays(t,90);if(!w.learned)w.learned=t;delete w.soon;
+  Q.items=Q.items.filter((it,k)=>k<=Q.i||it.id!==w.id);Q.known=(Q.known||0)+1;save();next();
+}
 function applySRS(){
   if(!Q||Q.mode==="free"||Q.applied)return;Q.applied=true;const t=today();
   const gap=(S.settings.soonMin||0)*60000,later=Date.now()+gap;
   if(Q.mode==="soon"){
     Object.entries(Q.res).forEach(([id,r])=>{const w=byId(id);if(!w)return;
+      if(r.grade==="perfect"){w.ok++;delete w.soon;w.stage=6;w.due=addDays(t,90);return;}
       if(r.wrong){w.ng++;w.soon=gap?later:null;}else{w.ok++;delete w.soon;}});
     save();return;
   }
   Object.entries(Q.res).forEach(([id,r])=>{const w=byId(id);if(!w)return;
     const firstTime=w.stage===0;delete w.soon;
-    if(gap&&(r.wrong||firstTime))w.soon=later;
+    if(r.grade==="perfect"){w.ok++;if(!w.learned)w.learned=t;w.stage=6;w.due=addDays(t,90);return;}
+    if(gap&&(r.wrong||firstTime||r.grade==="unsure"))w.soon=later;
+    if(r.grade==="unsure"&&!r.wrong){w.ok++;if(!w.learned)w.learned=t;w.stage=Math.max(1,w.stage);w.due=addDays(t,1);return;}
     if(r.wrong){w.ng++;if(!w.learned)w.learned=t;w.stage=1;w.due=addDays(t,1);}
     else{w.ok++;const prev=w.stage;if(prev===0){w.stage=1;w.learned=t;}else w.stage=Math.min(prev+1,6);w.due=addDays(t,prev===6?90:DAYS[w.stage]);}
   });
@@ -642,7 +670,8 @@ function renderQuiz(){
       ${w.ex?`<p class="ex">${hlEx(w)}</p><button class="say" data-act="say" data-t="${esc(w.ex)}">${SPK}例文を聞く</button>`:""}
       ${w.note?`<p class="tip">💡 ${esc(w.note)}</p>`:""}
     </article>
-    <button class="btn primary wide" data-act="next">覚えた、次へ</button>`;
+    <button class="btn primary wide" data-act="next">覚えた、次へ</button>
+    <button class="btn wide known-btn" data-act="known">◎ もう知ってる（覚えなくていい）</button>`;
   let prompt="";
   if(q.type==="en2ja")prompt=`<p class="kicker">意味はどれ？</p><p class="word">${esc(w.w)}</p>${ipaHTML(w)}<button class="say" data-act="say" data-t="${esc(w.w)}">${SPK}発音</button>`;
   if(q.type==="para")prompt=`<p class="kicker">ネイティブっぽく言うと？</p><p class="word para-q">${esc(w.para)}</p><p class="note">ふつうの言い方</p>`;
@@ -667,8 +696,13 @@ function renderQuiz(){
       ${w.ex?`<p class="ex">${hlEx(w)}</p>`:""}${w.note?`<p class="tip">💡 ${esc(w.note)}</p>`:""}
       <div class="row-btns"><button class="say" data-act="say" data-t="${esc(w.w)}">${SPK}発音</button>${w.ex?`<button class="say" data-act="say" data-t="${esc(w.ex)}">${SPK}例文</button>`:""}</div>
       ${!Q.ok?`<p class="hint">このあともう一度出ます。</p>`:""}
+      ${Q.ok&&Q.slow?`<p class="hint">考えた時間 ${Q.sec}秒 → ▲うろ覚え扱い（明日もう一度出ます）</p>`:""}
     </div>
-    <button class="btn primary wide" data-act="next" id="nextbtn">${last?"結果を見る":"次へ"}</button>`;
+    ${Q.ok&&!Q.slow&&Q.mode!=="free"?`<p class="grade-q">どれくらい覚えてた？</p><div class="grades">
+      <button class="btn grade g-perfect" data-act="grade" data-g="perfect"><b>◎</b>完璧<small>3ヶ月後に確認</small></button>
+      <button class="btn primary grade" data-act="grade" data-g="ok" id="nextbtn"><b>○</b>OK<small>いつもの間隔</small></button>
+      <button class="btn grade g-unsure" data-act="grade" data-g="unsure"><b>▲</b>うろ覚え<small>明日もう一度</small></button></div>`
+    :`<button class="btn primary wide" data-act="next" id="nextbtn">${last?"結果を見る":"次へ"}</button>`}`;
   }
   return head+`<article class="card qcard">${prompt}</article>`+body+fb;
 }
@@ -687,6 +721,8 @@ function renderSummary(){
     ${ra>rb?`<p class="rankup pop">ランクアップ！ ${RANKS[ra].t}になりました</p>`:""}
     ${Q.newMedals.length?`<div class="newmedals"><h2>メダル獲得！</h2><div class="medals">${Q.newMedals.map(m=>medalHTML(m,true)).join("")}</div></div>`:""}
     <p>${msg}</p>
+    ${(()=>{const rs=Object.values(Q.res),np=rs.filter(r=>r.grade==="perfect").length,nu=rs.filter(r=>r.grade==="unsure"&&!r.wrong).length,nk=Q.known||0;
+      return np||nu||nk?`<p class="note">${np?`◎完璧 ${np}語・`:""}${nk?`もう知ってる ${nk}語・`:""}${np||nk?"これらは3ヶ月後に確認します。":""}${nu?`▲うろ覚え ${nu}語は明日もう一度出ます。`:""}</p>`:"";})()}
     ${miss.length?`<h2>まちがえた単語</h2><ul class="miss">${miss.map(w=>`<li><b>${esc(w.w)}</b><span>${esc(w.ja)}</span></li>`).join("")}</ul>`:""}
   </article><button class="btn primary wide" data-act="home">ホームへ</button>`;
 }
@@ -990,6 +1026,9 @@ function renderSettings(){
   <section class="card panel"><h2>その日のうちのおさらい</h2>
     <p class="note">新しく覚えた単語とまちがえた単語を、少し時間をあけてもう一度出します。</p>
     <div class="seg">${[[0,"しない"],[30,"30分後"],[60,"1時間後"],[120,"2時間後"],[180,"3時間後"]].map(([n,l])=>`<button data-act="soonmin" data-n="${n}" class="${S.settings.soonMin===n?"on":""}">${l}</button>`).join("")}</div></section>
+  <section class="card panel"><h2>考えた時間で「うろ覚え」にする</h2>
+    <p class="note">正解でも、この秒数より長く考えたら▲うろ覚え（明日もう一度）にします。つづりの問題はこの3倍まで待ちます。</p>
+    <div class="seg">${[[0,"しない"],[3,"3秒"],[5,"5秒"],[8,"8秒"],[10,"10秒"]].map(([n,l])=>`<button data-act="slowsec" data-n="${n}" class="${S.settings.slowSec===n?"on":""}">${l}</button>`).join("")}</div></section>
   <section class="card panel"><h2>出題の種類</h2>
     <div class="checks">${Object.entries(TYPES).map(([k,v])=>`<label><input type="checkbox" id="t-${k}" data-type="${k}" ${S.settings.types[k]?"checked":""} ${k==="listen"&&!hasSpeech?"disabled":""}>${v}</label>`).join("")}</div>
     ${hasSpeech?"":'<p class="note">このブラウザでは音声が使えません。</p>'}</section>
@@ -1016,6 +1055,8 @@ document.addEventListener("click",e=>{
   if(a==="pick"){if(Q.answered)return;Q.pick=b.dataset.id;return settle(Q.pick===Q.cur.w.id);}
   if(a==="check"){const v=document.getElementById("spell").value;Q.typed=v;return settle(norm(v)===norm(Q.cur.w.w));}
   if(a==="next")return next();
+  if(a==="grade")return grade(b.dataset.g);
+  if(a==="known")return known();
   if(a==="quit"){tick();applySRS();checkMedals();save();Q=null;view="home";render();if(true)toast("ここまでの結果を保存しました");return;}
   if(a==="home"){Q=null;view="home";render();window.scrollTo(0,0);return;}
   if(a==="parse"){
@@ -1061,6 +1102,7 @@ document.addEventListener("click",e=>{
   if(a==="toggle"){openId=openId===b.dataset.id?null:b.dataset.id;confirmDel=null;document.getElementById("rows").innerHTML=rowsHTML();return;}
   if(a==="del"){const id=b.dataset.id;if(confirmDel!==id){confirmDel=id;document.getElementById("rows").innerHTML=rowsHTML();return;}
     const w=byId(id);S.words=S.words.filter(x=>x.id!==id);confirmDel=null;openId=null;save();render();toast(`${w?w.w:""} を削除しました`);return;}
+  if(a==="slowsec"){S.settings.slowSec=Number(b.dataset.n);save();render();return;}
   if(a==="soonmin"){S.settings.soonMin=Number(b.dataset.n);if(!S.settings.soonMin)S.words.forEach(w=>delete w.soon);save();render();return;}
   if(a==="perday"){S.settings.perDay=Number(b.dataset.n);save();render();return;}
   if(a==="mk-backup"){try{backup=btoa(unescape(encodeURIComponent(JSON.stringify(S))));}catch(err){backup="";toast("コードを作れませんでした");}render();return;}
