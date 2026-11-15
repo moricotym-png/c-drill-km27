@@ -125,6 +125,8 @@ mark{background:linear-gradient(transparent 58%,var(--hl) 58%);color:inherit;pad
 .para{font-size:14px;color:var(--muted);margin:2px 0 0}.fb .para{text-align:left}
 .para-def{font-size:18px;font-weight:700;line-height:1.5}
 .para-q{font-size:clamp(22px,7vw,30px)}
+.exja{font-size:12.5px;color:var(--muted);margin:2px 0 0;text-align:left}
+.synant{font-size:13px;margin:6px 0 0;text-align:left}.synant span{font-weight:800;color:var(--primary);margin-right:4px}
 .rel{font-size:13px;margin:8px 0 0;text-align:left;line-height:1.6}.rel span{display:inline-block;font-size:11px;font-weight:700;color:var(--on-primary);background:var(--primary);border-radius:999px;padding:1px 8px;margin-right:6px}.rel b{font-family:var(--f-word)}
 .tip{font-size:13px;color:var(--muted);margin:6px 0 0;text-align:left}
 .photo{display:flex;align-items:center;justify-content:center;gap:8px;cursor:pointer;box-sizing:border-box;white-space:normal;text-align:center}
@@ -566,11 +568,12 @@ function jaTokens(ja){
     .replace(/^[〜～…]+(を|に|が|と|から|で|へ)?/,"").replace(/^(とても|非常に|めちゃくちゃ|かなり|すごく|ひどく|大いに|ちょっと|少し)/,"").replace(/^[\s・]+|[\s・]+$/g,"")).filter(t=>t.length>=2&&!GENERIC.has(t));
 }
 function buildRel(){
-  const key=S.words.length+":"+S.words.reduce((a,w)=>a+(w.ja||"").length+(w.para||"").length,0);
+  const key=S.words.length+":"+S.words.reduce((a,w)=>a+(w.ja||"").length+(w.para||"").length+(w.syn||"").length,0);
   if(relIdx&&relKey===key)return relIdx;
   const tok=new Map(),eng=new Map(),add=(m,k,id)=>{if(!m.has(k))m.set(k,[]);m.get(k).push(id);};
   S.words.forEach(w=>{new Set(jaTokens(w.ja)).forEach(t=>add(tok,t,w.id));
-    add(eng,norm(w.w),w.id);if(w.para)String(w.para).split(/[;；,]/).map(x=>norm(x)).filter(x=>x.length>2).forEach(x=>add(eng,"p:"+x,w.id));});
+    add(eng,norm(w.w),w.id);if(w.para)String(w.para).split(/[;；,]/).map(x=>norm(x)).filter(x=>x.length>2).forEach(x=>add(eng,"p:"+x,w.id));
+    if(w.syn)String(w.syn).split(/[,，;；]/).map(x=>norm(x)).filter(Boolean).forEach(x=>add(eng,"s:"+x,w.id));});
   relIdx={tok,eng};relKey=key;return relIdx;
 }
 function relatedOf(w,n=4){
@@ -580,8 +583,12 @@ function relatedOf(w,n=4){
     (eng.get(x)||[]).forEach(id=>bump(id,3)); // 言い換えがその単語そのもの（approximately など）
     (eng.get("p:"+x)||[]).forEach(id=>bump(id,2));}); // 言い換えが同じ
   (eng.get("p:"+norm(w.w))||[]).forEach(id=>bump(id,3)); // ほかの語の言い換えがこの単語
+  if(w.syn)String(w.syn).split(/[,，;；]/).map(x=>norm(x)).filter(Boolean).forEach(x=>(eng.get(x)||[]).forEach(id=>bump(id,3))); // 類義語が登録ずみの単語
+  (eng.get("s:"+norm(w.w))||[]).forEach(id=>bump(id,3)); // ほかの語の類義語にこの単語がある
   return [...score.entries()].sort((a,b)=>b[1]-a[1]).slice(0,n).map(([id])=>byId(id)).filter(Boolean);
 }
+function extraHTML(w){ // 例文の訳・類義語・反対語
+  return `${w.exJa?`<p class="exja">${esc(w.exJa)}</p>`:""}${w.syn||w.ant?`<p class="synant">${w.syn?`<span>≒</span>${esc(w.syn)}　`:""}${w.ant?`<span>⇔</span>${esc(w.ant)}`:""}</p>`:""}`;}
 function relHTML(w){const rs=relatedOf(w);if(!rs.length)return"";
   return`<p class="rel"><span>似た意味</span>${rs.map(x=>`<b>${esc(x.w)}</b> ${esc(String(x.ja).slice(0,24))}`).join("　")}</p>`;}
 
@@ -702,7 +709,7 @@ function renderQuiz(){
       <button class="say" data-act="say" data-t="${esc(w.w)}">${SPK}発音</button>
       <p class="ja">${esc(w.ja)}</p>${w.para?`<p class="para">≒ ${esc(w.para)}</p>`:""}
       ${w.ex?`<p class="ex">${hlEx(w)}</p><button class="say" data-act="say" data-t="${esc(w.ex)}">${SPK}例文を聞く</button>`:""}
-      ${w.note?`<p class="tip">💡 ${esc(w.note)}</p>`:""}${relHTML(w)}
+      ${w.note?`<p class="tip">💡 ${esc(w.note)}</p>`:""}${extraHTML(w)}${relHTML(w)}
     </article>
     <button class="btn primary wide" data-act="next">覚えた、次へ</button>
     <button class="btn wide known-btn" data-act="known">◎ もう知ってる（覚えなくていい）</button>`;
@@ -729,7 +736,7 @@ function renderQuiz(){
     fb=`<div class="fb ${Q.ok?"ok":"ng"}"><p class="verdict">${Q.ok?"正解！":"ざんねん"}${Q.ok&&Q.combo>=3?`<span class="combo pop">${Q.combo}連続正解！</span>`:""}</p>
       ${!Q.ok&&q.type==="spell"?`<p class="hint">あなたの答え：${esc(Q.typed||"（空らん）")}</p>`:""}
       <p class="fb-word">${esc(w.w)}<span>${esc(w.ja)}</span></p>${ipaHTML(w)}${w.para?`<p class="para">≒ ${esc(w.para)}</p>`:""}
-      ${w.ex?`<p class="ex">${hlEx(w)}</p>`:""}${w.note?`<p class="tip">💡 ${esc(w.note)}</p>`:""}${relHTML(w)}
+      ${w.ex?`<p class="ex">${hlEx(w)}</p>`:""}${w.note?`<p class="tip">💡 ${esc(w.note)}</p>`:""}${extraHTML(w)}${relHTML(w)}
       <div class="row-btns"><button class="say" data-act="say" data-t="${esc(w.w)}">${SPK}発音</button>${w.ex?`<button class="say" data-act="say" data-t="${esc(w.ex)}">${SPK}例文</button>`:""}</div>
       ${!Q.ok?`<p class="hint">このあともう一度出ます。</p>`:""}
       ${Q.ok&&Q.slow?`<p class="hint">考えた時間 ${Q.sec}秒 → ▲うろ覚え扱い（明日もう一度出ます）</p>`:""}
@@ -838,7 +845,7 @@ function renderAdd(){
 }
 const prioOf=x=>x.prio||(x.ex?2:1);
 function upsert(set,w,ja,ex,more){
-  const add=x=>{if(more&&more.ipa)x.ipa=more.ipa;if(more&&more.note)x.note=more.note;if(more&&more.para)x.para=more.para;return x;};
+  const add=x=>{if(more)["ipa","note","para","syn","ant","exJa"].forEach(k=>{if(more[k])x[k]=more[k];});return x;};
   const np=(more&&more.prio)||(ex?2:1);
   const ex0=S.words.find(x=>norm(x.w)===norm(w));
   if(ex0){const op=prioOf(ex0);ex0.ja=ja;if(ex)ex0.ex=ex;add(ex0);if(np>op)ex0.set=set;ex0.prio=Math.max(np,op);relKey="";return false;}
@@ -1007,7 +1014,7 @@ function parseAiReply(text){
   const d=JSON.parse(body.slice(a,b+1)),str=v=>v==null?"":String(v).trim();
   const items=(Array.isArray(d.words)?d.words:[]).filter(w=>w&&(w.word||w.surface)).map(w=>({
     w:str(w.word||w.surface),ja:str(w.meaning_ja||w.meaning),ex:str(w.sentence),
-    para:str(w.meaning_en),ipa:str(w.reading).replace(/^\/+|\/+$/g,"").replace(/^\[|\]$/g,""),pos:str(w.pos),note:str(w.note),set:str(w.set)}));
+    para:str(w.meaning_en),syn:str(w.syn),ant:str(w.ant),exJa:str(w.sentence_ja),ipa:str(w.reading).replace(/^\/+|\/+$/g,"").replace(/^\[|\]$/g,""),pos:str(w.pos),note:str(w.note),set:str(w.set)}));
   const prio=Number(d.prio)||0;items.forEach(it=>{it.prio=prio||(it.ex?2:1);});
   const seen=new Set();return{set:str(d.set),items:items.filter(it=>{const k=norm(it.w);if(seen.has(k))return false;seen.add(k);return true;})};
 }
@@ -1045,7 +1052,7 @@ function rowsHTML(){
   return ws.map(w=>{
     const open=openId===w.id;
     return `<div class="wrow"><button class="wrow-main" data-act="toggle" data-id="${w.id}" aria-expanded="${open}"><span class="ww">${esc(w.w)}</span><span class="wj">${esc(w.ja)}</span><span class="chip s${w.stage}">${LV[w.stage]}</span></button>
-    ${open?`<div class="wdet">${ipaHTML(w)}<p class="ja" style="font-size:15px">${esc(w.ja)}</p>${w.para?`<p class="para">≒ ${esc(w.para)}</p>`:""}${w.ex?`<p class="ex">${hlEx(w)}</p>`:""}${w.note?`<p class="tip">💡 ${esc(w.note)}</p>`:""}${relHTML(w)}
+    ${open?`<div class="wdet">${ipaHTML(w)}<p class="ja" style="font-size:15px">${esc(w.ja)}</p>${w.para?`<p class="para">≒ ${esc(w.para)}</p>`:""}${w.ex?`<p class="ex">${hlEx(w)}</p>`:""}${w.note?`<p class="tip">💡 ${esc(w.note)}</p>`:""}${extraHTML(w)}${relHTML(w)}
       <p class="meta">${esc(w.set)}・${w.stage?`次の復習 ${md(w.due)}`:"まだ学習していません"}・正解 ${w.ok} / ミス ${w.ng}</p>
       <div class="row-btns"><button class="say" data-act="say" data-t="${esc(w.w)}">${SPK}発音</button>${w.ex?`<button class="say" data-act="say" data-t="${esc(w.ex)}">${SPK}例文</button>`:""}
       <button class="btn ${confirmDel===w.id?"primary":""} danger" data-act="del" data-id="${w.id}" style="padding:6px 14px">${confirmDel===w.id?"本当に削除する":"削除"}</button></div></div>`:""}</div>`;
@@ -1122,12 +1129,14 @@ document.addEventListener("click",e=>{
       if(old){ // 別の単語帳とかぶった語：覚えた記録はそのまま、くわしいほうの単語帳の中身にする
         const op=old.prio||(old.ex?2:1),np=it.prio||(it.ex?2:1),win=np>=op;
         if(win){old.ja=it.ja;if(it.ex)old.ex=it.ex;if(it.ipa)old.ipa=it.ipa;if(it.para)old.para=it.para;old.prio=np;
+          ["syn","ant","exJa"].forEach(k=>{if(it[k])old[k]=it[k];});
           if(np>op){const ws=it.set?(top?top+" "+it.set:it.set):(top||old.set);old.set=ws;used.add(ws);}} // 優先する単語帳のセットに移す
         else{if(!old.ex&&it.ex)old.ex=it.ex;if(!old.ipa&&it.ipa)old.ipa=it.ipa;if(!old.para&&it.para)old.para=it.para;} // 足りないところだけ補う
         if(it.note){const ns=new Set((old.note||"").split("・").filter(Boolean));it.note.split("・").forEach(x=>x&&ns.add(x));old.note=[...ns].join("・");}
         upd++;return;}
       const ws=it.set?(top?top+" "+it.set:it.set):(top||"追加");used.add(ws);
       const nw=Object.assign({id:uid(),set:ws,w:it.w,ja:it.ja,ex:it.ex||"",stage:0,due:null,ok:0,ng:0,learned:null,prio:it.prio||(it.ex?2:1)},it.ipa?{ipa:it.ipa}:{},it.note?{note:it.note}:{},it.para?{para:it.para}:{});
+      ["syn","ant","exJa"].forEach(k=>{if(it[k])nw[k]=it[k];});
       S.words.push(nw);byW.set(norm(it.w),nw);added++;});
     relKey="";save();preview=null;draft="";ocrMsg="";render();toast(`${used.size?`${used.size}セットに${added}語を追加`:"追加はなし"}${upd?`・${upd}語を更新`:""}しました`);return;}
   if(a==="commit"){
@@ -1140,7 +1149,7 @@ document.addEventListener("click",e=>{
       if(!w||!ja){skip++;return;}const it=preview.items[i],same=norm(it.w)===norm(w);
       const sub=preview.groups?((document.getElementById("pv-s"+i)||{}).value||"").trim():"";
       const ws=sub?(top?top+" "+sub:sub):set;used.add(ws);
-      upsert(ws,w,ja,ex,same?{ipa:it.ipa,note:it.note,para:it.para,prio:it.prio}:{prio:it.prio})?added++:upd++;});
+      upsert(ws,w,ja,ex,same?{ipa:it.ipa,note:it.note,para:it.para,syn:it.syn,ant:it.ant,exJa:it.exJa,prio:it.prio}:{prio:it.prio})?added++:upd++;});
     save();preview=null;draft="";ocrMsg="";render();toast(`${used.size>1?`${used.size}セットに`:([...used][0]||set)+" に"}${added}語を追加${upd?`・${upd}語を更新`:""}しました${skip?`（意味が空の${skip}語はとばしました）`:""}`);return;
   }
   if(a==="add-one"){
