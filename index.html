@@ -169,11 +169,12 @@ textarea{resize:vertical;font-size:14px}
 
 .seg{display:flex;gap:6px;flex-wrap:wrap}
 .grade-q{margin:4px 0 0;text-align:center;font-weight:700;font-size:14px;color:var(--muted)}
-.grades{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.grades{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}.grades.two{grid-template-columns:repeat(2,1fr)}
 .grade{display:flex;flex-direction:column;align-items:center;gap:2px;padding:10px 4px;border-radius:16px;white-space:normal;line-height:1.2}
-.grade b{font-size:20px}.grade small{font-size:10.5px;font-weight:700;opacity:.8}
+.grade{font-size:13px}.grade b{font-size:19px}.grade small{font-size:9.5px;font-weight:700;opacity:.8}
 .g-perfect{border-color:var(--ok,#1a7f4b);color:var(--ok,#1a7f4b)}
-.g-unsure{border-color:#c77c02;color:#c77c02}
+.g-unsure{border-color:#c77c02;color:#c77c02}.g-unsure.primary{background:#c77c02;color:#fff}
+.g-bad{border-color:var(--ng);color:var(--ng)}
 .known-btn{margin-top:8px}
 .time-rec{border-top:1px dashed var(--line);border-bottom:1px dashed var(--line);padding:10px 0;display:flex;flex-direction:column;gap:4px}
 .time-rec .label{margin:0}.time-rec .mid{margin:0}.time-rec .mid small{font-size:13px}
@@ -590,6 +591,9 @@ function next(){tick();Q.i++;prepare();saveQ();render();window.scrollTo(0,0);spe
 function grade(g){
   const id=Q.cur.w.id,r=Q.res[id];if(!r)return next();
   r.grade=g;
+  if(g==="bad"){ // 正解でも当てずっぽうだったとき：まちがいと同じ扱い（この回でもう一度・間隔は最初から）
+    if(!r.wrong){r.wrong=true;Q.combo=0;}r.last=false;
+    Q.requeued[id]=(Q.requeued[id]||0)+1;if(Q.requeued[id]<=10)Q.items.push({id,phase:"quiz"});}
   if(g==="perfect"){Q.items=Q.items.filter((it,k)=>k<=Q.i||it.id!==id);} // この回ではもう出さない
   next();
 }
@@ -698,10 +702,11 @@ function renderQuiz(){
       ${!Q.ok?`<p class="hint">このあともう一度出ます。</p>`:""}
       ${Q.ok&&Q.slow?`<p class="hint">考えた時間 ${Q.sec}秒 → ▲うろ覚え扱い（明日もう一度出ます）</p>`:""}
     </div>
-    ${Q.ok&&!Q.slow&&Q.mode!=="free"?`<p class="grade-q">どれくらい覚えてた？</p><div class="grades">
-      <button class="btn grade g-perfect" data-act="grade" data-g="perfect"><b>◎</b>完璧<small>3ヶ月後に確認</small></button>
-      <button class="btn primary grade" data-act="grade" data-g="ok" id="nextbtn"><b>○</b>OK<small>いつもの間隔</small></button>
-      <button class="btn grade g-unsure" data-act="grade" data-g="unsure"><b>▲</b>うろ覚え<small>明日もう一度</small></button></div>`
+    ${Q.ok&&Q.mode!=="free"?`<p class="grade-q">どれくらい覚えてた？</p><div class="grades${Q.slow?" two":""}">
+      ${Q.slow?"":`<button class="btn grade g-perfect" data-act="grade" data-g="perfect"><b>◎</b>完璧<small>3ヶ月後</small></button>
+      <button class="btn primary grade" data-act="grade" data-g="ok" id="nextbtn"><b>○</b>OK<small>いつもの間隔</small></button>`}
+      <button class="btn grade g-unsure${Q.slow?" primary":""}" data-act="grade" data-g="unsure"><b>▲</b>うろ覚え<small>明日また</small></button>
+      <button class="btn grade g-bad" data-act="grade" data-g="bad"><b>✕</b>わからない<small>すぐもう一度</small></button></div>`
     :`<button class="btn primary wide" data-act="next" id="nextbtn">${last?"結果を見る":"次へ"}</button>`}`;
   }
   return head+`<article class="card qcard">${prompt}</article>`+body+fb;
