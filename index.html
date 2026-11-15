@@ -122,6 +122,8 @@ mark{background:linear-gradient(transparent 58%,var(--hl) 58%);color:inherit;pad
 .pv-big{padding:12px 14px;display:flex;flex-direction:column;gap:4px;font-size:14px}.pv-big p{margin:0}
 .pv-set{font-size:13px;padding:6px 10px}
 .pv-meta{font-size:12px;color:var(--muted);line-height:1.4}
+.para{font-size:14px;color:var(--muted);margin:2px 0 0}.fb .para{text-align:left}
+.para-q{font-size:clamp(22px,7vw,30px)}
 .tip{font-size:13px;color:var(--muted);margin:6px 0 0;text-align:left}
 .photo{display:flex;align-items:center;justify-content:center;gap:8px;cursor:pointer;box-sizing:border-box;white-space:normal;text-align:center}
 .photo svg{width:20px;height:20px;flex:none}
@@ -331,7 +333,7 @@ const SEED=[
 const KEY="c-drill-v1";
 const DAYS=[0,1,3,7,14,30,60];
 const LV=["未学習","Lv.1","Lv.2","Lv.3","Lv.4","Lv.5","定着"];
-const TYPES={en2ja:"英語を見て意味を選ぶ",ja2en:"意味を見て英語を選ぶ",cloze:"例文の空欄に入る語を選ぶ",listen:"発音を聞いて意味を選ぶ",spell:"つづりを書く（Lv.2から）"};
+const TYPES={en2ja:"英語を見て意味を選ぶ",ja2en:"意味を見て英語を選ぶ",cloze:"例文の空欄に入る語を選ぶ",listen:"発音を聞いて意味を選ぶ",spell:"つづりを書く（Lv.2から）",para:"ふつうの英語からネイティブの表現を選ぶ"};
 const SPK='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5L6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/></svg>';
 const CAM='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>';
 const PEN='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 4l5 5L9 20H4v-5z"/><path d="M3 23h18" stroke="#e5484d"/></svg>';
@@ -346,7 +348,7 @@ const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&
 const norm=s=>String(s??"").trim().toLowerCase();
 const shuffle=a=>{a=a.slice();for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;};
 const uid=()=>"u"+Math.random().toString(36).slice(2,8)+Date.now().toString(36).slice(-4);
-const defTypes=()=>({en2ja:true,ja2en:true,cloze:true,listen:true,spell:true});
+const defTypes=()=>({en2ja:true,ja2en:true,cloze:true,listen:true,spell:true,para:true});
 
 function fresh(){return{v:1,words:SEED.map(([set,w,ja,ex],i)=>({id:"s"+i,set,w,ja,ex,stage:0,due:null,ok:0,ng:0,learned:null})),settings:{perDay:10,types:defTypes()},days:{}};}
 let S,storageOK=true;
@@ -541,6 +543,7 @@ function chooseType(w){
   if(t.en2ja)el.push("en2ja");if(t.ja2en)el.push("ja2en");
   if(t.cloze&&cloze(w))el.push("cloze");if(t.listen&&hasSpeech)el.push("listen");
   if(t.spell&&(w.stage>=2||Q.mode==="free")&&Q.mode!=="new"&&/^[A-Za-z'-]+$/.test(w.w))el.push("spell");
+  if(t.para&&w.para)el.push("para","para"); // 言い換えがある語は、この問題を多めに
   if(!el.length)el=["en2ja"];
   return el[Math.floor(Math.random()*el.length)];
 }
@@ -552,7 +555,7 @@ function distract(w,key,n=3){
 }
 function buildQ(type,w){
   if(type==="spell")return{type,w};
-  const key=(type==="ja2en"||type==="cloze")?"w":"ja";
+  const key=(type==="ja2en"||type==="cloze"||type==="para")?"w":"ja";
   const q={type,w,key,opts:shuffle([w,...distract(w,key)]).map(x=>({id:x.id,text:x[key]}))};
   if(type==="cloze")q.cz=cloze(w);
   return q;
@@ -635,13 +638,14 @@ function renderQuiz(){
     <article class="card qcard"><p class="kicker">新しい単語・${esc(w.set)}</p>
       <p class="word"><mark>${esc(w.w)}</mark></p>${ipaHTML(w)}
       <button class="say" data-act="say" data-t="${esc(w.w)}">${SPK}発音</button>
-      <p class="ja">${esc(w.ja)}</p>
+      <p class="ja">${esc(w.ja)}</p>${w.para?`<p class="para">≒ ${esc(w.para)}</p>`:""}
       ${w.ex?`<p class="ex">${hlEx(w)}</p><button class="say" data-act="say" data-t="${esc(w.ex)}">${SPK}例文を聞く</button>`:""}
       ${w.note?`<p class="tip">💡 ${esc(w.note)}</p>`:""}
     </article>
     <button class="btn primary wide" data-act="next">覚えた、次へ</button>`;
   let prompt="";
   if(q.type==="en2ja")prompt=`<p class="kicker">意味はどれ？</p><p class="word">${esc(w.w)}</p>${ipaHTML(w)}<button class="say" data-act="say" data-t="${esc(w.w)}">${SPK}発音</button>`;
+  if(q.type==="para")prompt=`<p class="kicker">ネイティブっぽく言うと？</p><p class="word para-q">${esc(w.para)}</p><p class="note">ふつうの言い方</p>`;
   if(q.type==="ja2en")prompt=`<p class="kicker">英語はどれ？</p><p class="ja" style="font-size:22px">${esc(w.ja)}</p>`;
   if(q.type==="cloze")prompt=`<p class="kicker">空らんに入る語は？</p><p class="ex cz">${esc(q.cz.before)}<span class="blank">${Q.answered?esc(q.cz.hit):"&nbsp;"}</span>${esc(q.cz.after)}</p>`;
   if(q.type==="listen")prompt=`<p class="kicker">聞こえた単語の意味は？</p><button class="play" data-act="say" data-t="${esc(w.w)}" aria-label="もう一度聞く">${SPK}</button><p class="hint">ボタンでもう一度聞けます</p>`;
@@ -659,7 +663,7 @@ function renderQuiz(){
     const last=Q.i>=Q.items.length-1;
     fb=`<div class="fb ${Q.ok?"ok":"ng"}"><p class="verdict">${Q.ok?"正解！":"ざんねん"}${Q.ok&&Q.combo>=3?`<span class="combo pop">${Q.combo}連続正解！</span>`:""}</p>
       ${!Q.ok&&q.type==="spell"?`<p class="hint">あなたの答え：${esc(Q.typed||"（空らん）")}</p>`:""}
-      <p class="fb-word">${esc(w.w)}<span>${esc(w.ja)}</span></p>${ipaHTML(w)}
+      <p class="fb-word">${esc(w.w)}<span>${esc(w.ja)}</span></p>${ipaHTML(w)}${w.para?`<p class="para">≒ ${esc(w.para)}</p>`:""}
       ${w.ex?`<p class="ex">${hlEx(w)}</p>`:""}${w.note?`<p class="tip">💡 ${esc(w.note)}</p>`:""}
       <div class="row-btns"><button class="say" data-act="say" data-t="${esc(w.w)}">${SPK}発音</button>${w.ex?`<button class="say" data-act="say" data-t="${esc(w.ex)}">${SPK}例文</button>`:""}</div>
       ${!Q.ok?`<p class="hint">このあともう一度出ます。</p>`:""}
@@ -760,7 +764,7 @@ function renderAdd(){
   </details>`;
 }
 function upsert(set,w,ja,ex,more){
-  const add=x=>{if(more&&more.ipa)x.ipa=more.ipa;if(more&&more.note)x.note=more.note;return x;};
+  const add=x=>{if(more&&more.ipa)x.ipa=more.ipa;if(more&&more.note)x.note=more.note;if(more&&more.para)x.para=more.para;return x;};
   const ex0=S.words.find(x=>norm(x.w)===norm(w));
   if(ex0){ex0.ja=ja;ex0.ex=ex;add(ex0);return false;}
   S.words.push(add({id:uid(),set,w,ja,ex,stage:0,due:null,ok:0,ng:0,learned:null}));return true;
@@ -928,7 +932,7 @@ function parseAiReply(text){
   const d=JSON.parse(body.slice(a,b+1)),str=v=>v==null?"":String(v).trim();
   const items=(Array.isArray(d.words)?d.words:[]).filter(w=>w&&(w.word||w.surface)).map(w=>({
     w:str(w.word||w.surface),ja:str(w.meaning_ja||w.meaning),ex:str(w.sentence),
-    ipa:str(w.reading).replace(/^\/+|\/+$/g,"").replace(/^\[|\]$/g,""),pos:str(w.pos),note:str(w.note),set:str(w.set)}));
+    para:str(w.meaning_en),ipa:str(w.reading).replace(/^\/+|\/+$/g,"").replace(/^\[|\]$/g,""),pos:str(w.pos),note:str(w.note),set:str(w.set)}));
   const seen=new Set();return{set:str(d.set),items:items.filter(it=>{const k=norm(it.w);if(seen.has(k))return false;seen.add(k);return true;})};
 }
 function aiTake(text){
@@ -965,7 +969,7 @@ function rowsHTML(){
   return ws.map(w=>{
     const open=openId===w.id;
     return `<div class="wrow"><button class="wrow-main" data-act="toggle" data-id="${w.id}" aria-expanded="${open}"><span class="ww">${esc(w.w)}</span><span class="wj">${esc(w.ja)}</span><span class="chip s${w.stage}">${LV[w.stage]}</span></button>
-    ${open?`<div class="wdet">${ipaHTML(w)}<p class="ja" style="font-size:15px">${esc(w.ja)}</p>${w.ex?`<p class="ex">${hlEx(w)}</p>`:""}${w.note?`<p class="tip">💡 ${esc(w.note)}</p>`:""}
+    ${open?`<div class="wdet">${ipaHTML(w)}<p class="ja" style="font-size:15px">${esc(w.ja)}</p>${w.para?`<p class="para">≒ ${esc(w.para)}</p>`:""}${w.ex?`<p class="ex">${hlEx(w)}</p>`:""}${w.note?`<p class="tip">💡 ${esc(w.note)}</p>`:""}
       <p class="meta">${esc(w.set)}・${w.stage?`次の復習 ${md(w.due)}`:"まだ学習していません"}・正解 ${w.ok} / ミス ${w.ng}</p>
       <div class="row-btns"><button class="say" data-act="say" data-t="${esc(w.w)}">${SPK}発音</button>${w.ex?`<button class="say" data-act="say" data-t="${esc(w.ex)}">${SPK}例文</button>`:""}
       <button class="btn ${confirmDel===w.id?"primary":""} danger" data-act="del" data-id="${w.id}" style="padding:6px 14px">${confirmDel===w.id?"本当に削除する":"削除"}</button></div></div>`:""}</div>`;
@@ -1034,7 +1038,7 @@ document.addEventListener("click",e=>{
     const have=new Set(S.words.map(w=>norm(w.w))),used=new Set();let added=0;
     preview.items.forEach(it=>{if(!it.w||!it.ja||have.has(norm(it.w)))return;have.add(norm(it.w));
       const ws=it.set?(top?top+" "+it.set:it.set):(top||"追加");used.add(ws);
-      S.words.push(Object.assign({id:uid(),set:ws,w:it.w,ja:it.ja,ex:it.ex||"",stage:0,due:null,ok:0,ng:0,learned:null},it.ipa?{ipa:it.ipa}:{},it.note?{note:it.note}:{}));added++;});
+      S.words.push(Object.assign({id:uid(),set:ws,w:it.w,ja:it.ja,ex:it.ex||"",stage:0,due:null,ok:0,ng:0,learned:null},it.ipa?{ipa:it.ipa}:{},it.note?{note:it.note}:{},it.para?{para:it.para}:{}));added++;});
     save();preview=null;draft="";ocrMsg="";render();toast(`${used.size}セットに${added}語を追加しました`);return;}
   if(a==="commit"){
     const up=x=>/^[a-z]+\d+$/i.test(x)?x.toUpperCase():x;
@@ -1046,7 +1050,7 @@ document.addEventListener("click",e=>{
       if(!w||!ja){skip++;return;}const it=preview.items[i],same=norm(it.w)===norm(w);
       const sub=preview.groups?((document.getElementById("pv-s"+i)||{}).value||"").trim():"";
       const ws=sub?(top?top+" "+sub:sub):set;used.add(ws);
-      upsert(ws,w,ja,ex,same?{ipa:it.ipa,note:it.note}:null)?added++:upd++;});
+      upsert(ws,w,ja,ex,same?{ipa:it.ipa,note:it.note,para:it.para}:null)?added++:upd++;});
     save();preview=null;draft="";ocrMsg="";render();toast(`${used.size>1?`${used.size}セットに`:([...used][0]||set)+" に"}${added}語を追加${upd?`・${upd}語を更新`:""}しました${skip?`（意味が空の${skip}語はとばしました）`:""}`);return;
   }
   if(a==="add-one"){
