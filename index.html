@@ -123,6 +123,7 @@ mark{background:linear-gradient(transparent 58%,var(--hl) 58%);color:inherit;pad
 .pv-set{font-size:13px;padding:6px 10px}
 .pv-meta{font-size:12px;color:var(--muted);line-height:1.4}
 .para{font-size:14px;color:var(--muted);margin:2px 0 0}.fb .para{text-align:left}
+.para-def{font-size:18px;font-weight:700;line-height:1.5}
 .para-q{font-size:clamp(22px,7vw,30px)}
 .rel{font-size:13px;margin:8px 0 0;text-align:left;line-height:1.6}.rel span{display:inline-block;font-size:11px;font-weight:700;color:var(--on-primary);background:var(--primary);border-radius:999px;padding:1px 8px;margin-right:6px}.rel b{font-family:var(--f-word)}
 .tip{font-size:13px;color:var(--muted);margin:6px 0 0;text-align:left}
@@ -707,7 +708,9 @@ function renderQuiz(){
     <button class="btn wide known-btn" data-act="known">◎ もう知ってる（覚えなくていい）</button>`;
   let prompt="";
   if(q.type==="en2ja")prompt=`<p class="kicker">意味はどれ？</p><p class="word">${esc(w.w)}</p>${ipaHTML(w)}<button class="say" data-act="say" data-t="${esc(w.w)}">${SPK}発音</button>`;
-  if(q.type==="para")prompt=`<p class="kicker">ネイティブっぽく言うと？</p><p class="word para-q">${esc(w.para)}</p><p class="note">ふつうの言い方</p>`;
+  if(q.type==="para"){const long=String(w.para).trim().split(/\s+/).length>4;
+    prompt=long?`<p class="kicker">この英語の説明に合う単語は？</p><p class="ex para-def">${esc(w.para)}</p>`
+      :`<p class="kicker">ネイティブっぽく言うと？</p><p class="word para-q">${esc(w.para)}</p><p class="note">ふつうの言い方</p>`;}
   if(q.type==="ja2en")prompt=`<p class="kicker">英語はどれ？</p><p class="ja" style="font-size:22px">${esc(w.ja)}</p>`;
   if(q.type==="cloze")prompt=`<p class="kicker">空らんに入る語は？</p><p class="ex cz">${esc(q.cz.before)}<span class="blank">${Q.answered?esc(q.cz.hit):"&nbsp;"}</span>${esc(q.cz.after)}</p>`;
   if(q.type==="listen")prompt=`<p class="kicker">聞こえた単語の意味は？</p><button class="play" data-act="say" data-t="${esc(w.w)}" aria-label="もう一度聞く">${SPK}</button><p class="hint">ボタンでもう一度聞けます</p>`;
@@ -789,7 +792,7 @@ const BIG=120;
 function previewHTML(){
   if(!preview)return"";
   if(!preview.items.length)return preview.red?"":`<p class="warn">単語が見つかりませんでした。単語・意味・例文が入った部分をコピーしているか確認してください。</p>`;
-  const have=new Set(S.words.map(w=>norm(w.w)));
+  const have=new Set(S.words.map(w=>norm(w.w))),oldBy=new Map(S.words.map(w=>[norm(w.w),w]));
   const gl=preview.groups?[...new Set(preview.items.map(it=>it.set||"（セットなし）"))].map(g=>`${esc(g)} ${preview.items.filter(it=>(it.set||"（セットなし）")===g).length}語`).join("・"):"";
   if(preview.items.length>BIG){
     const nNew=preview.items.filter(it=>!have.has(norm(it.w))).length;
@@ -799,7 +802,7 @@ function previewHTML(){
       <button class="btn primary wide" data-act="commit-big">${nNew}語を追加${preview.items.length-nNew?`・${preview.items.length-nNew}語を更新`:""}</button></section>`;
   }
   return `<section class="pv"><h2>読み取った単語（${preview.items.length}語）</h2>${gl?`<p class="note">セットに分けて追加します：${gl}</p>`:""}<p class="note">まちがいがあれば直してから追加してください。チェックを外した語は追加されません。</p>
-    ${preview.items.map((it,i)=>{const dup=have.has(norm(it.w));return`<div class="card pv-row" data-i="${i}"><input type="checkbox" id="pv-c${i}" ${dup?"":"checked"} aria-label="${esc(it.w)}を追加">
+    ${preview.items.map((it,i)=>{const dup=have.has(norm(it.w)),better=dup&&(it.prio||1)>prioOf(oldBy.get(norm(it.w)));return`<div class="card pv-row" data-i="${i}"><input type="checkbox" id="pv-c${i}" ${dup&&!better?"":"checked"} aria-label="${esc(it.w)}を追加">
       <div class="inputs"><input type="text" class="w" id="pv-w${i}" value="${esc(it.w)}" aria-label="英単語"><input type="text" id="pv-j${i}" value="${esc(it.ja)}" placeholder="意味を入れてください" aria-label="意味"><input type="text" id="pv-e${i}" value="${esc(it.ex)}" aria-label="例文">${preview.groups?`<input type="text" class="pv-set" id="pv-s${i}" value="${esc(it.set||"")}" placeholder="セット" aria-label="セット">`:""}${it.ipa||it.pos?`<span class="pv-meta">${it.ipa?`/${esc(it.ipa)}/ `:""}${esc(it.pos||"")}</span>`:""}${it.note?`<span class="pv-meta">💡 ${esc(it.note)}</span>`:""}${dup?'<span class="dup">すでに登録ずみ（チェックすると意味と例文を上書き）</span>':""}</div></div>`}).join("")}
     <button class="btn primary wide" data-act="commit">チェックした単語を追加</button></section>`;
 }
@@ -833,11 +836,13 @@ function renderAdd(){
     <div class="field"><button class="btn primary wide" data-act="add-one">この単語を追加</button></div>
   </details>`;
 }
+const prioOf=x=>x.prio||(x.ex?2:1);
 function upsert(set,w,ja,ex,more){
   const add=x=>{if(more&&more.ipa)x.ipa=more.ipa;if(more&&more.note)x.note=more.note;if(more&&more.para)x.para=more.para;return x;};
+  const np=(more&&more.prio)||(ex?2:1);
   const ex0=S.words.find(x=>norm(x.w)===norm(w));
-  if(ex0){ex0.ja=ja;ex0.ex=ex;add(ex0);return false;}
-  S.words.push(add({id:uid(),set,w,ja,ex,stage:0,due:null,ok:0,ng:0,learned:null}));return true;
+  if(ex0){const op=prioOf(ex0);ex0.ja=ja;if(ex)ex0.ex=ex;add(ex0);if(np>op)ex0.set=set;ex0.prio=Math.max(np,op);relKey="";return false;}
+  S.words.push(add({id:uid(),set,w,ja,ex,stage:0,due:null,ok:0,ng:0,learned:null,prio:np}));relKey="";return true;
 }
 
 /* ---------- photo reading ---------- */
@@ -1003,6 +1008,7 @@ function parseAiReply(text){
   const items=(Array.isArray(d.words)?d.words:[]).filter(w=>w&&(w.word||w.surface)).map(w=>({
     w:str(w.word||w.surface),ja:str(w.meaning_ja||w.meaning),ex:str(w.sentence),
     para:str(w.meaning_en),ipa:str(w.reading).replace(/^\/+|\/+$/g,"").replace(/^\[|\]$/g,""),pos:str(w.pos),note:str(w.note),set:str(w.set)}));
+  const prio=Number(d.prio)||0;items.forEach(it=>{it.prio=prio||(it.ex?2:1);});
   const seen=new Set();return{set:str(d.set),items:items.filter(it=>{const k=norm(it.w);if(seen.has(k))return false;seen.add(k);return true;})};
 }
 function aiTake(text){
@@ -1113,12 +1119,15 @@ document.addEventListener("click",e=>{
     const byW=new Map(S.words.map(w=>[norm(w.w),w])),used=new Set();let added=0,upd=0;
     preview.items.forEach(it=>{if(!it.w||!it.ja)return;
       const old=byW.get(norm(it.w));
-      if(old){ // 別の単語帳とかぶった語：覚えた記録はそのまま、中身だけ新しくする
-        old.ja=it.ja;if(it.ex)old.ex=it.ex;if(it.ipa)old.ipa=it.ipa;if(it.para)old.para=it.para;
+      if(old){ // 別の単語帳とかぶった語：覚えた記録はそのまま、くわしいほうの単語帳の中身にする
+        const op=old.prio||(old.ex?2:1),np=it.prio||(it.ex?2:1),win=np>=op;
+        if(win){old.ja=it.ja;if(it.ex)old.ex=it.ex;if(it.ipa)old.ipa=it.ipa;if(it.para)old.para=it.para;old.prio=np;
+          if(np>op){const ws=it.set?(top?top+" "+it.set:it.set):(top||old.set);old.set=ws;used.add(ws);}} // 優先する単語帳のセットに移す
+        else{if(!old.ex&&it.ex)old.ex=it.ex;if(!old.ipa&&it.ipa)old.ipa=it.ipa;if(!old.para&&it.para)old.para=it.para;} // 足りないところだけ補う
         if(it.note){const ns=new Set((old.note||"").split("・").filter(Boolean));it.note.split("・").forEach(x=>x&&ns.add(x));old.note=[...ns].join("・");}
         upd++;return;}
       const ws=it.set?(top?top+" "+it.set:it.set):(top||"追加");used.add(ws);
-      const nw=Object.assign({id:uid(),set:ws,w:it.w,ja:it.ja,ex:it.ex||"",stage:0,due:null,ok:0,ng:0,learned:null},it.ipa?{ipa:it.ipa}:{},it.note?{note:it.note}:{},it.para?{para:it.para}:{});
+      const nw=Object.assign({id:uid(),set:ws,w:it.w,ja:it.ja,ex:it.ex||"",stage:0,due:null,ok:0,ng:0,learned:null,prio:it.prio||(it.ex?2:1)},it.ipa?{ipa:it.ipa}:{},it.note?{note:it.note}:{},it.para?{para:it.para}:{});
       S.words.push(nw);byW.set(norm(it.w),nw);added++;});
     relKey="";save();preview=null;draft="";ocrMsg="";render();toast(`${used.size?`${used.size}セットに${added}語を追加`:"追加はなし"}${upd?`・${upd}語を更新`:""}しました`);return;}
   if(a==="commit"){
@@ -1131,7 +1140,7 @@ document.addEventListener("click",e=>{
       if(!w||!ja){skip++;return;}const it=preview.items[i],same=norm(it.w)===norm(w);
       const sub=preview.groups?((document.getElementById("pv-s"+i)||{}).value||"").trim():"";
       const ws=sub?(top?top+" "+sub:sub):set;used.add(ws);
-      upsert(ws,w,ja,ex,same?{ipa:it.ipa,note:it.note,para:it.para}:null)?added++:upd++;});
+      upsert(ws,w,ja,ex,same?{ipa:it.ipa,note:it.note,para:it.para,prio:it.prio}:{prio:it.prio})?added++:upd++;});
     save();preview=null;draft="";ocrMsg="";render();toast(`${used.size>1?`${used.size}セットに`:([...used][0]||set)+" に"}${added}語を追加${upd?`・${upd}語を更新`:""}しました${skip?`（意味が空の${skip}語はとばしました）`:""}`);return;
   }
   if(a==="add-one"){
