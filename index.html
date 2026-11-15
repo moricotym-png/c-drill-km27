@@ -173,7 +173,7 @@ textarea{resize:vertical;font-size:14px}
 
 .seg{display:flex;gap:6px;flex-wrap:wrap}
 .grade-q{margin:4px 0 0;text-align:center;font-weight:700;font-size:14px;color:var(--muted)}
-.grades{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}.grades.two{grid-template-columns:repeat(2,1fr)}
+.grades{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.grades.two{grid-template-columns:repeat(2,1fr)}
 .grade{display:flex;flex-direction:column;align-items:center;gap:2px;padding:10px 4px;border-radius:16px;white-space:normal;line-height:1.2}
 .grade{font-size:13px}.grade b{font-size:19px}.grade small{font-size:9.5px;font-weight:700;opacity:.8}
 .g-perfect{border-color:var(--ok,#1a7f4b);color:var(--ok,#1a7f4b)}
@@ -386,7 +386,8 @@ function restoreQ(){try{
 /* ---------- game layer ---------- */
 const newStats=()=>({correct:0,timeMs:0,sessions:0,perfect:0,stars:0,bestCombo:0,bestStreak:0,medals:{},best:{}});
 function normalize(){
-  S.settings=Object.assign({perDay:10,soonMin:60,slowSec:5},S.settings||{});S.settings.types=Object.assign(defTypes(),S.settings.types||{});S.days=S.days||{};
+  S.settings=Object.assign({perDay:10,soonMin:60,slowSec:10},S.settings||{});
+  if(!S.settings.slow10){if(S.settings.slowSec===5)S.settings.slowSec=10;S.settings.slow10=true;} // 5秒の初期値を10秒に変更S.settings.types=Object.assign(defTypes(),S.settings.types||{});S.days=S.days||{};
   if(!S.stats){S.stats=newStats();S.stats.correct=Object.values(S.days).reduce((a,d)=>a+(d.c||0),0);}
   else{S.stats=Object.assign(newStats(),S.stats);S.stats.medals=S.stats.medals||{};}
   checkMedals();
@@ -612,7 +613,9 @@ function settle(ok){
   const r=Q.res[id]||(Q.res[id]={wrong:false});
   r.last=ok; // 最後に答えたときに正解したか
   // 考えた時間。設定の秒数をこえたら、正解でも「うろ覚え」扱い（つづりは3倍まで待つ）
-  const sec=(Date.now()-(Q.shownAt||Date.now()))/1000,lim=(S.settings.slowSec||0)*(Q.cur.type==="spell"?3:1);
+  const sec=(Date.now()-(Q.shownAt||Date.now()))/1000,base=S.settings.slowSec||0,
+    longQ=Q.cur.type==="cloze"||(Q.cur.type==="para"&&String(Q.cur.w.para||"").split(/\s+/).length>4),
+    lim=base?base*(Q.cur.type==="spell"?3:1)+(longQ?5:0):0; // 文を読む問題は5秒おまけ
   Q.sec=Math.round(sec);Q.slow=ok&&lim>0&&sec>lim&&Q.mode!=="free";
   if(!ok){r.wrong=true;r.grade="bad";Q.requeued[id]=(Q.requeued[id]||0)+1;if(Q.requeued[id]<=10)Q.items.push({id,phase:"quiz"});}
   else if(Q.slow){r.grade="unsure";}
@@ -742,9 +745,8 @@ function renderQuiz(){
       ${Q.ok&&Q.slow?`<p class="hint">考えた時間 ${Q.sec}秒 → ▲うろ覚え扱い（明日もう一度出ます）</p>`:""}
     </div>
     ${Q.ok&&Q.mode!=="free"?`<p class="grade-q">どれくらい覚えてた？</p><div class="grades${Q.slow?" two":""}">
-      ${Q.slow?"":`<button class="btn grade g-perfect" data-act="grade" data-g="perfect"><b>◎</b>完璧<small>3ヶ月後</small></button>
-      <button class="btn primary grade" data-act="grade" data-g="ok" id="nextbtn"><b>○</b>OK<small>いつもの間隔</small></button>`}
-      <button class="btn grade g-unsure${Q.slow?" primary":""}" data-act="grade" data-g="unsure"><b>▲</b>うろ覚え<small>明日また</small></button>
+      ${Q.slow?"":`<button class="btn primary grade g-ok" data-act="grade" data-g="ok" id="nextbtn"><b>○</b>覚えた<small>間隔をのばす</small></button>`}
+      <button class="btn grade g-unsure${Q.slow?" primary":""}" data-act="grade" data-g="unsure"><b>▲</b>うろ覚え<small>明日もう一度</small></button>
       <button class="btn grade g-bad" data-act="grade" data-g="bad"><b>✕</b>わからない<small>すぐもう一度</small></button></div>`
     :`<button class="btn primary wide" data-act="next" id="nextbtn">${last?"結果を見る":"次へ"}</button>`}`;
   }
@@ -1074,8 +1076,8 @@ function renderSettings(){
     <p class="note">新しく覚えた単語とまちがえた単語を、少し時間をあけてもう一度出します。</p>
     <div class="seg">${[[0,"しない"],[30,"30分後"],[60,"1時間後"],[120,"2時間後"],[180,"3時間後"]].map(([n,l])=>`<button data-act="soonmin" data-n="${n}" class="${S.settings.soonMin===n?"on":""}">${l}</button>`).join("")}</div></section>
   <section class="card panel"><h2>考えた時間で「うろ覚え」にする</h2>
-    <p class="note">正解でも、この秒数より長く考えたら▲うろ覚え（明日もう一度）にします。つづりの問題はこの3倍まで待ちます。</p>
-    <div class="seg">${[[0,"しない"],[3,"3秒"],[5,"5秒"],[8,"8秒"],[10,"10秒"]].map(([n,l])=>`<button data-act="slowsec" data-n="${n}" class="${S.settings.slowSec===n?"on":""}">${l}</button>`).join("")}</div></section>
+    <p class="note">正解でも、この秒数より長く考えたら▲うろ覚え（明日もう一度）にします。例文や英語の説明を読む問題は5秒長く、つづりの問題は3倍まで待ちます。</p>
+    <div class="seg">${[[0,"しない"],[5,"5秒"],[8,"8秒"],[10,"10秒"],[15,"15秒"],[20,"20秒"]].map(([n,l])=>`<button data-act="slowsec" data-n="${n}" class="${S.settings.slowSec===n?"on":""}">${l}</button>`).join("")}</div></section>
   <section class="card panel"><h2>出題の種類</h2>
     <div class="checks">${Object.entries(TYPES).map(([k,v])=>`<label><input type="checkbox" id="t-${k}" data-type="${k}" ${S.settings.types[k]?"checked":""} ${k==="listen"&&!hasSpeech?"disabled":""}>${v}</label>`).join("")}</div>
     ${hasSpeech?"":'<p class="note">このブラウザでは音声が使えません。</p>'}</section>
