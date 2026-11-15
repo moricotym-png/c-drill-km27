@@ -124,6 +124,7 @@ mark{background:linear-gradient(transparent 58%,var(--hl) 58%);color:inherit;pad
 .pv-meta{font-size:12px;color:var(--muted);line-height:1.4}
 .para{font-size:14px;color:var(--muted);margin:2px 0 0}.fb .para{text-align:left}
 .para-q{font-size:clamp(22px,7vw,30px)}
+.rel{font-size:13px;margin:8px 0 0;text-align:left;line-height:1.6}.rel span{display:inline-block;font-size:11px;font-weight:700;color:var(--on-primary);background:var(--primary);border-radius:999px;padding:1px 8px;margin-right:6px}.rel b{font-family:var(--f-word)}
 .tip{font-size:13px;color:var(--muted);margin:6px 0 0;text-align:left}
 .photo{display:flex;align-items:center;justify-content:center;gap:8px;cursor:pointer;box-sizing:border-box;white-space:normal;text-align:center}
 .photo svg{width:20px;height:20px;flex:none}
@@ -555,10 +556,38 @@ function chooseType(w){
   if(!el.length)el=["en2ja"];
   return el[Math.floor(Math.random()*el.length)];
 }
+/* ---------- 似た意味の単語 ---------- */
+// 日本語の意味の言葉が重なる語、英語の言い換えが同じ語・その単語そのものを「似た意味」としてつなぐ
+let relIdx=null,relKey="";
+const GENERIC=new Set(["する","こと","もの","人","の","な","よう","状態","ある","いる","ない","なる","させる","される"]);
+function jaTokens(ja){
+  return String(ja||"").replace(/[（(][^）)]*[）)]/g,"").split(/[、，,／\/;；・。]/).map(t=>t.trim()
+    .replace(/^[〜～…]+(を|に|が|と|から|で|へ)?/,"").replace(/^(とても|非常に|めちゃくちゃ|かなり|すごく|ひどく|大いに|ちょっと|少し)/,"").replace(/^[\s・]+|[\s・]+$/g,"")).filter(t=>t.length>=2&&!GENERIC.has(t));
+}
+function buildRel(){
+  const key=S.words.length+":"+S.words.reduce((a,w)=>a+(w.ja||"").length+(w.para||"").length,0);
+  if(relIdx&&relKey===key)return relIdx;
+  const tok=new Map(),eng=new Map(),add=(m,k,id)=>{if(!m.has(k))m.set(k,[]);m.get(k).push(id);};
+  S.words.forEach(w=>{new Set(jaTokens(w.ja)).forEach(t=>add(tok,t,w.id));
+    add(eng,norm(w.w),w.id);if(w.para)String(w.para).split(/[;；,]/).map(x=>norm(x)).filter(x=>x.length>2).forEach(x=>add(eng,"p:"+x,w.id));});
+  relIdx={tok,eng};relKey=key;return relIdx;
+}
+function relatedOf(w,n=4){
+  const {tok,eng}=buildRel(),score=new Map(),bump=(id,v)=>{if(id!==w.id)score.set(id,(score.get(id)||0)+v);};
+  new Set(jaTokens(w.ja)).forEach(t=>{const ids=tok.get(t)||[];if(ids.length<=12)ids.forEach(id=>bump(id,1));});
+  if(w.para)String(w.para).split(/[;；,]/).map(x=>norm(x)).filter(x=>x.length>2).forEach(x=>{
+    (eng.get(x)||[]).forEach(id=>bump(id,3)); // 言い換えがその単語そのもの（approximately など）
+    (eng.get("p:"+x)||[]).forEach(id=>bump(id,2));}); // 言い換えが同じ
+  (eng.get("p:"+norm(w.w))||[]).forEach(id=>bump(id,3)); // ほかの語の言い換えがこの単語
+  return [...score.entries()].sort((a,b)=>b[1]-a[1]).slice(0,n).map(([id])=>byId(id)).filter(Boolean);
+}
+function relHTML(w){const rs=relatedOf(w);if(!rs.length)return"";
+  return`<p class="rel"><span>似た意味</span>${rs.map(x=>`<b>${esc(x.w)}</b> ${esc(String(x.ja).slice(0,24))}`).join("　")}</p>`;}
+
 function distract(w,key,n=3){
   const pool=shuffle(S.words.filter(x=>x.id!==w.id&&x.set===w.set)).concat(shuffle(S.words.filter(x=>x.id!==w.id&&x.set!==w.set)));
-  const out=[],seen=new Set([norm(w[key])]);
-  for(const x of pool){const k=norm(x[key]);if(!k||seen.has(k))continue;seen.add(k);out.push(x);if(out.length>=n)break;}
+  const out=[],seen=new Set([norm(w[key])]),near=new Set(relatedOf(w,12).map(x=>x.id)); // 似た意味の語は答えがまぎらわしいので選択肢に入れない
+  for(const x of pool){const k=norm(x[key]);if(!k||seen.has(k)||near.has(x.id))continue;seen.add(k);out.push(x);if(out.length>=n)break;}
   return out;
 }
 function buildQ(type,w){
@@ -672,7 +701,7 @@ function renderQuiz(){
       <button class="say" data-act="say" data-t="${esc(w.w)}">${SPK}発音</button>
       <p class="ja">${esc(w.ja)}</p>${w.para?`<p class="para">≒ ${esc(w.para)}</p>`:""}
       ${w.ex?`<p class="ex">${hlEx(w)}</p><button class="say" data-act="say" data-t="${esc(w.ex)}">${SPK}例文を聞く</button>`:""}
-      ${w.note?`<p class="tip">💡 ${esc(w.note)}</p>`:""}
+      ${w.note?`<p class="tip">💡 ${esc(w.note)}</p>`:""}${relHTML(w)}
     </article>
     <button class="btn primary wide" data-act="next">覚えた、次へ</button>
     <button class="btn wide known-btn" data-act="known">◎ もう知ってる（覚えなくていい）</button>`;
@@ -697,7 +726,7 @@ function renderQuiz(){
     fb=`<div class="fb ${Q.ok?"ok":"ng"}"><p class="verdict">${Q.ok?"正解！":"ざんねん"}${Q.ok&&Q.combo>=3?`<span class="combo pop">${Q.combo}連続正解！</span>`:""}</p>
       ${!Q.ok&&q.type==="spell"?`<p class="hint">あなたの答え：${esc(Q.typed||"（空らん）")}</p>`:""}
       <p class="fb-word">${esc(w.w)}<span>${esc(w.ja)}</span></p>${ipaHTML(w)}${w.para?`<p class="para">≒ ${esc(w.para)}</p>`:""}
-      ${w.ex?`<p class="ex">${hlEx(w)}</p>`:""}${w.note?`<p class="tip">💡 ${esc(w.note)}</p>`:""}
+      ${w.ex?`<p class="ex">${hlEx(w)}</p>`:""}${w.note?`<p class="tip">💡 ${esc(w.note)}</p>`:""}${relHTML(w)}
       <div class="row-btns"><button class="say" data-act="say" data-t="${esc(w.w)}">${SPK}発音</button>${w.ex?`<button class="say" data-act="say" data-t="${esc(w.ex)}">${SPK}例文</button>`:""}</div>
       ${!Q.ok?`<p class="hint">このあともう一度出ます。</p>`:""}
       ${Q.ok&&Q.slow?`<p class="hint">考えた時間 ${Q.sec}秒 → ▲うろ覚え扱い（明日もう一度出ます）</p>`:""}
@@ -766,8 +795,8 @@ function previewHTML(){
     const nNew=preview.items.filter(it=>!have.has(norm(it.w))).length;
     return`<section class="pv"><h2>読みこんだ単語（${preview.items.length}語）</h2>${gl?`<p class="note">セットに分けて追加します：${gl}</p>`:""}
       <div class="card pv-big">${preview.items.slice(0,30).map(it=>`<p><b>${esc(it.w)}</b> ${esc(it.ja)}</p>`).join("")}<p class="note">…ほか ${preview.items.length-30}語</p></div>
-      <p class="note">語数が多いので、まとめて追加します。すでに登録ずみの${preview.items.length-nNew}語はそのままにします。追加したあと「一覧」で直せます。</p>
-      <button class="btn primary wide" data-act="commit-big">${nNew}語をまとめて追加</button></section>`;
+      <p class="note">語数が多いので、まとめて追加します。${preview.items.length-nNew?`すでに登録ずみの${preview.items.length-nNew}語は、覚えた記録はそのままで、意味や例文を新しくします。`:""}追加したあと「一覧」で直せます。</p>
+      <button class="btn primary wide" data-act="commit-big">${nNew}語を追加${preview.items.length-nNew?`・${preview.items.length-nNew}語を更新`:""}</button></section>`;
   }
   return `<section class="pv"><h2>読み取った単語（${preview.items.length}語）</h2>${gl?`<p class="note">セットに分けて追加します：${gl}</p>`:""}<p class="note">まちがいがあれば直してから追加してください。チェックを外した語は追加されません。</p>
     ${preview.items.map((it,i)=>{const dup=have.has(norm(it.w));return`<div class="card pv-row" data-i="${i}"><input type="checkbox" id="pv-c${i}" ${dup?"":"checked"} aria-label="${esc(it.w)}を追加">
@@ -1010,7 +1039,7 @@ function rowsHTML(){
   return ws.map(w=>{
     const open=openId===w.id;
     return `<div class="wrow"><button class="wrow-main" data-act="toggle" data-id="${w.id}" aria-expanded="${open}"><span class="ww">${esc(w.w)}</span><span class="wj">${esc(w.ja)}</span><span class="chip s${w.stage}">${LV[w.stage]}</span></button>
-    ${open?`<div class="wdet">${ipaHTML(w)}<p class="ja" style="font-size:15px">${esc(w.ja)}</p>${w.para?`<p class="para">≒ ${esc(w.para)}</p>`:""}${w.ex?`<p class="ex">${hlEx(w)}</p>`:""}${w.note?`<p class="tip">💡 ${esc(w.note)}</p>`:""}
+    ${open?`<div class="wdet">${ipaHTML(w)}<p class="ja" style="font-size:15px">${esc(w.ja)}</p>${w.para?`<p class="para">≒ ${esc(w.para)}</p>`:""}${w.ex?`<p class="ex">${hlEx(w)}</p>`:""}${w.note?`<p class="tip">💡 ${esc(w.note)}</p>`:""}${relHTML(w)}
       <p class="meta">${esc(w.set)}・${w.stage?`次の復習 ${md(w.due)}`:"まだ学習していません"}・正解 ${w.ok} / ミス ${w.ng}</p>
       <div class="row-btns"><button class="say" data-act="say" data-t="${esc(w.w)}">${SPK}発音</button>${w.ex?`<button class="say" data-act="say" data-t="${esc(w.ex)}">${SPK}例文</button>`:""}
       <button class="btn ${confirmDel===w.id?"primary":""} danger" data-act="del" data-id="${w.id}" style="padding:6px 14px">${confirmDel===w.id?"本当に削除する":"削除"}</button></div></div>`:""}</div>`;
@@ -1081,11 +1110,17 @@ document.addEventListener("click",e=>{
   if(a==="commit-big"){
     const up=x=>/^[a-z]+\d+$/i.test(x)?x.toUpperCase():x;
     const top=up(document.getElementById("setname").value.trim()||preview.set||"");
-    const have=new Set(S.words.map(w=>norm(w.w))),used=new Set();let added=0;
-    preview.items.forEach(it=>{if(!it.w||!it.ja||have.has(norm(it.w)))return;have.add(norm(it.w));
+    const byW=new Map(S.words.map(w=>[norm(w.w),w])),used=new Set();let added=0,upd=0;
+    preview.items.forEach(it=>{if(!it.w||!it.ja)return;
+      const old=byW.get(norm(it.w));
+      if(old){ // 別の単語帳とかぶった語：覚えた記録はそのまま、中身だけ新しくする
+        old.ja=it.ja;if(it.ex)old.ex=it.ex;if(it.ipa)old.ipa=it.ipa;if(it.para)old.para=it.para;
+        if(it.note){const ns=new Set((old.note||"").split("・").filter(Boolean));it.note.split("・").forEach(x=>x&&ns.add(x));old.note=[...ns].join("・");}
+        upd++;return;}
       const ws=it.set?(top?top+" "+it.set:it.set):(top||"追加");used.add(ws);
-      S.words.push(Object.assign({id:uid(),set:ws,w:it.w,ja:it.ja,ex:it.ex||"",stage:0,due:null,ok:0,ng:0,learned:null},it.ipa?{ipa:it.ipa}:{},it.note?{note:it.note}:{},it.para?{para:it.para}:{}));added++;});
-    save();preview=null;draft="";ocrMsg="";render();toast(`${used.size}セットに${added}語を追加しました`);return;}
+      const nw=Object.assign({id:uid(),set:ws,w:it.w,ja:it.ja,ex:it.ex||"",stage:0,due:null,ok:0,ng:0,learned:null},it.ipa?{ipa:it.ipa}:{},it.note?{note:it.note}:{},it.para?{para:it.para}:{});
+      S.words.push(nw);byW.set(norm(it.w),nw);added++;});
+    relKey="";save();preview=null;draft="";ocrMsg="";render();toast(`${used.size?`${used.size}セットに${added}語を追加`:"追加はなし"}${upd?`・${upd}語を更新`:""}しました`);return;}
   if(a==="commit"){
     const up=x=>/^[a-z]+\d+$/i.test(x)?x.toUpperCase():x;
     const top=up(document.getElementById("setname").value.trim()||preview.set||"");
