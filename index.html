@@ -477,7 +477,13 @@ const newLeft=()=>Math.max(0,Math.min(S.settings.perDay-learnedToday(),newList()
 function streak(){let d=today();if(!(S.days[d]&&S.days[d].n))d=addDays(d,-1);let n=0;while(S.days[d]&&S.days[d].n){n++;d=addDays(d,-1);}return n;}
 function sets(){const m=new Map();S.words.forEach(w=>{if(!m.has(w.set))m.set(w.set,[]);m.get(w.set).push(w);});return[...m.entries()].sort((a,b)=>a[0].localeCompare(b[0],"ja",{numeric:true}));}
 
-function speak(t){if(!hasSpeech||!t)return;try{speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(t);u.lang="en-US";u.rate=.9;const v=speechSynthesis.getVoices().find(v=>/^en[-_]US/i.test(v.lang));if(v)u.voice=v;speechSynthesis.speak(u);}catch(e){}}
+// 読み上げ用：sb→somebody、sth→something（表示はそのまま）
+function sayText(t){return String(t)
+  .replace(/\bsth\/sb\b/gi,"something or somebody").replace(/\bsb\/sth\b/gi,"somebody or something")
+  .replace(/\bsb's\b/gi,"somebody's").replace(/\bsth's\b/gi,"something's")
+  .replace(/\bsb\b/gi,"somebody").replace(/\bsth\b/gi,"something")
+  .replace(/\(that\)/gi,"that").replace(/[()]/g," ").replace(/\s*\/\s*/g," or ").replace(/\s+/g," ").trim();}
+function speak(t){if(!hasSpeech||!t)return;try{speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(sayText(t));u.lang="en-US";u.rate=.9;const v=speechSynthesis.getVoices().find(v=>/^en[-_]US/i.test(v.lang));if(v)u.voice=v;speechSynthesis.speak(u);}catch(e){}}
 if(hasSpeech){try{speechSynthesis.getVoices();}catch(e){}}
 
 function cloze(w){
