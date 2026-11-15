@@ -172,6 +172,7 @@ textarea{resize:vertical;font-size:14px}
 .empty{color:var(--muted);text-align:center;padding:30px 0}
 
 .seg{display:flex;gap:6px;flex-wrap:wrap}
+.mix{margin:2px 0 0;font-size:11.5px}
 .grade-q{margin:4px 0 0;text-align:center;font-weight:700;font-size:14px;color:var(--muted)}
 .grades{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.grades.two{grid-template-columns:repeat(2,1fr)}
 .grade{display:flex;flex-direction:column;align-items:center;gap:2px;padding:10px 4px;border-radius:16px;white-space:normal;line-height:1.2}
@@ -454,7 +455,23 @@ const dueList=()=>S.words.filter(isDue);
 const soonAll=()=>S.words.filter(w=>w.soon);
 const soonReady=()=>soonAll().filter(w=>w.soon<=Date.now());
 const hm=ms=>{const d=new Date(ms);return d.getHours()+":"+pad(d.getMinutes());};
-const newList=()=>S.words.filter(w=>w.stage===0);
+// 単語帳＝セット名の最初の言葉（C1〜C9 はまとめて「C単語」）
+const bookOf=set=>{const t=String(set||"").trim().split(/\s+/)[0];return /^[A-Z]\d+$/.test(t)?"C単語":t||"追加";};
+const newList=()=>{const off=S.settings.newOff||{};return S.words.filter(w=>w.stage===0&&!off[bookOf(w.set)]);};
+// 新しく覚える単語を、単語帳ごとの「まだ覚えていない語数」の割合で割り振る（各単語帳の中は本の順番）
+function pickNew(n){
+  const all=newList(),by=new Map();all.forEach(w=>{const b=bookOf(w.set);if(!by.has(b))by.set(b,[]);by.get(b).push(w);});
+  n=Math.min(n,all.length);if(!n)return[];
+  const al=[...by.entries()].map(([b,ws])=>{const q=n*ws.length/all.length;return{b,ws,k:Math.floor(q),r:q-Math.floor(q)};});
+  if(n>=al.length)al.forEach(x=>{if(!x.k){x.k=1;x.r=-1;}}); // 語数が足りるときは、どの単語帳からも1語は出す
+  let rest=n-al.reduce((a,x)=>a+x.k,0);
+  while(rest<0){const x=al.filter(x=>x.k>1).sort((a,b)=>a.r-b.r)[0];if(!x)break;x.k--;rest++;}
+  al.slice().sort((a,b)=>b.r-a.r).forEach(x=>{if(rest>0&&x.k<x.ws.length){x.k++;rest--;}});
+  const out=[];al.forEach(x=>x.ws.slice(0,x.k).forEach((w,i)=>out.push({w,pos:(i+.5)/x.k})));
+  return out.sort((a,b)=>a.pos-b.pos).map(o=>o.w); // 単語帳がまざるように並べる
+}
+function newMixHTML(nl){if(!nl)return"";const c=new Map();pickNew(nl).forEach(w=>{const b=bookOf(w.set);c.set(b,(c.get(b)||0)+1);});
+  return c.size>1?`<p class="note mix">${[...c.entries()].map(([b,k])=>`${esc(b)} ${k}`).join("・")}</p>`:"";}
 const learnedToday=()=>S.words.filter(w=>w.learned===today()).length;
 const newLeft=()=>Math.max(0,Math.min(S.settings.perDay-learnedToday(),newList().length));
 function streak(){let d=today();if(!(S.days[d]&&S.days[d].n))d=addDays(d,-1);let n=0;while(S.days[d]&&S.days[d].n){n++;d=addDays(d,-1);}return n;}
@@ -508,7 +525,7 @@ function renderHome(){
   <section class="card hero">
     <div class="hero-row"><div><p class="label">今日の復習</p><p class="big">${due}<small>語</small></p></div>
       <button class="btn primary" data-act="start-review" ${due?"":"disabled"}>${due?"復習をはじめる":"今日の復習は完了"}</button></div>
-    <div class="hero-row sub"><div><p class="label">新しく覚える（1日${S.settings.perDay}語まで）</p><p class="mid">${nl}<small>語</small></p></div>
+    <div class="hero-row sub"><div><p class="label">新しく覚える（1日${S.settings.perDay}語まで）</p><p class="mid">${nl}<small>語</small></p>${newMixHTML(nl)}</div>
       <button class="btn" data-act="start-new" ${nl?"":"disabled"}>${newTxt}</button></div>
     ${soonRowHTML()}
   </section>
@@ -539,7 +556,7 @@ function startSession(mode,set){
   let items=[];
   if(mode==="review")items=shuffle(dueList()).map(w=>({id:w.id,phase:"quiz"}));
   else if(mode==="soon")items=shuffle(soonReady()).map(w=>({id:w.id,phase:"quiz"}));
-  else if(mode==="new"){const ws=newList().slice(0,newLeft());for(let i=0;i<ws.length;i+=5){const ch=ws.slice(i,i+5);ch.forEach(w=>items.push({id:w.id,phase:"intro"}));shuffle(ch).forEach(w=>items.push({id:w.id,phase:"quiz"}));}}
+  else if(mode==="new"){const ws=pickNew(newLeft());for(let i=0;i<ws.length;i+=5){const ch=ws.slice(i,i+5);ch.forEach(w=>items.push({id:w.id,phase:"intro"}));shuffle(ch).forEach(w=>items.push({id:w.id,phase:"quiz"}));}}
   else items=shuffle(S.words.filter(w=>w.set===set)).map(w=>({id:w.id,phase:"quiz"}));
   if(!items.length)return;
   Q={mode,set,items,i:0,res:{},requeued:{},n:0,c:0,done:false,combo:0,bestCombo:0,lastT:Date.now(),newMedals:[]};
@@ -1072,6 +1089,10 @@ function renderSettings(){
   return `<header class="top"><div><p class="eyebrow">設定</p><h1>学習の設定</h1></div></header>
   <section class="card panel"><h2>1日に新しく覚える単語の数</h2>
     <div class="seg">${[5,10,15,20,30,40,50,75,100,125,150,200].map(n=>`<button data-act="perday" data-n="${n}" class="${S.settings.perDay===n?"on":""}">${n}語</button>`).join("")}</div></section>
+  <section class="card panel"><h2>新しく覚える単語帳</h2>
+    <p class="note">チェックした単語帳から、まだ覚えていない語数の割合に合わせて割り振って出します。</p>
+    <div class="checks">${(()=>{const m=new Map();S.words.filter(w=>w.stage===0).forEach(w=>{const b=bookOf(w.set);m.set(b,(m.get(b)||0)+1);});const off=S.settings.newOff||{};
+      return [...m.entries()].sort((a,b)=>b[1]-a[1]).map(([b,k])=>`<label><input type="checkbox" data-book="${esc(b)}" ${off[b]?"":"checked"}>${esc(b)}<span class="note">　未学習 ${k}語</span></label>`).join("")||'<p class="note">未学習の単語はありません</p>';})()}</div></section>
   <section class="card panel"><h2>その日のうちのおさらい</h2>
     <p class="note">新しく覚えた単語とまちがえた単語を、少し時間をあけてもう一度出します。</p>
     <div class="seg">${[[0,"しない"],[30,"30分後"],[60,"1時間後"],[120,"2時間後"],[180,"3時間後"]].map(([n,l])=>`<button data-act="soonmin" data-n="${n}" class="${S.settings.soonMin===n?"on":""}">${l}</button>`).join("")}</div></section>
@@ -1179,6 +1200,7 @@ document.addEventListener("click",e=>{
 });
 document.addEventListener("change",e=>{
   const t=e.target;
+  if(t.dataset&&t.dataset.book!==undefined){S.settings.newOff=S.settings.newOff||{};if(t.checked)delete S.settings.newOff[t.dataset.book];else S.settings.newOff[t.dataset.book]=true;save();return;}
   if(t.dataset&&t.dataset.aifile!==undefined){const f=t.files&&t.files[0];if(!f){toast("ファイルが選ばれていません");return;}
     toast(`${f.name} を読みこみ中…`);
     const done=txt=>{t.value="";if(!txt||!txt.trim()){toast("ファイルの中身が空でした");return;}aiTake(txt);};
