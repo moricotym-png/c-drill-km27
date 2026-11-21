@@ -172,6 +172,14 @@ textarea{resize:vertical;font-size:14px}
 .empty{color:var(--muted);text-align:center;padding:30px 0}
 
 .seg{display:flex;gap:6px;flex-wrap:wrap}
+.gram details{margin-top:4px}.gram .sets{margin-top:8px}
+.gq-text{font-size:18px;font-weight:700;line-height:1.7;text-align:left;width:100%;margin:0}
+.blank{display:inline-block;min-width:3.5em;border-bottom:2px solid var(--ink);margin:0 2px}
+.tiles{display:flex;flex-wrap:wrap;gap:8px;min-height:48px;align-items:center}
+.tiles.built{background:var(--card);border:1.5px dashed var(--line);border-radius:12px;padding:10px}
+.tile{border:1.5px solid var(--line);background:var(--card);border-radius:10px;padding:8px 12px;font-family:var(--f-word);font-weight:600;font-size:16px}
+.tiles.built .tile{border-color:var(--primary);color:var(--primary)}
+.fb-ans{margin:0}.gexp{margin:0;font-size:14px;line-height:1.6}
 .share-list{max-height:260px;overflow:auto;display:flex;flex-direction:column;gap:6px;margin:8px 0;padding:4px 2px}
 .mix{margin:2px 0 0;font-size:11.5px}
 .grade-q{margin:4px 0 0;text-align:center;font-weight:700;font-size:14px;color:var(--muted)}
@@ -345,7 +353,7 @@ const SEED=[
 ];
 
 const KEY="c-drill-v1";
-const APP_VER="2026-11-21h"; // 画面を変えたら上げる（設定の一番下に表示。新しい版があれば自動で読みこみ直す）
+const APP_VER="2026-11-22a"; // 画面を変えたら上げる（設定の一番下に表示。新しい版があれば自動で読みこみ直す）
 const DAYS=[0,1,3,7,14,30,60];
 const LV=["未学習","Lv.1","Lv.2","Lv.3","Lv.4","Lv.5","定着"];
 const TYPES={en2ja:"英語を見て意味を選ぶ",ja2en:"意味を見て英語を選ぶ",cloze:"例文の空欄に入る語を選ぶ",listen:"発音を聞いて意味を選ぶ",spell:"つづりを書く（Lv.2から）",para:"ふつうの英語からネイティブの表現を選ぶ"};
@@ -390,7 +398,7 @@ function restoreQ(){try{
 const newStats=()=>({correct:0,timeMs:0,sessions:0,perfect:0,stars:0,bestCombo:0,bestStreak:0,medals:{},best:{}});
 function normalize(){
   S.settings=Object.assign({perDay:10,soonMin:60,slowSec:10},S.settings||{});
-  if(!S.settings.slow10){if(S.settings.slowSec===5)S.settings.slowSec=10;S.settings.slow10=true;} // 5秒の初期値を10秒に変更S.settings.types=Object.assign(defTypes(),S.settings.types||{});S.days=S.days||{};
+  if(!S.settings.slow10){if(S.settings.slowSec===5)S.settings.slowSec=10;S.settings.slow10=true;} // 5秒の初期値を10秒に変更S.settings.types=Object.assign(defTypes(),S.settings.types||{});S.days=S.days||{};S.grammar=S.grammar||[];
   if(!S.stats){S.stats=newStats();S.stats.correct=Object.values(S.days).reduce((a,d)=>a+(d.c||0),0);}
   else{S.stats=Object.assign(newStats(),S.stats);S.stats.medals=S.stats.medals||{};}
   checkMedals();
@@ -514,9 +522,9 @@ function toast(msg){const t=document.getElementById("toast");t.textContent=msg;t
 
 function render(){
   const app=document.getElementById("app");
-  document.getElementById("tabs").hidden=!!Q;
+  document.getElementById("tabs").hidden=!!(Q||G);
   document.querySelectorAll("#tabs button").forEach(b=>b.classList.toggle("on",b.dataset.v===view));
-  app.innerHTML=Q?renderQuiz():view==="home"?renderHome():view==="add"?renderAdd():view==="list"?renderList():renderSettings();
+  app.innerHTML=Q?renderQuiz():G?renderGram():view==="home"?renderHome():view==="add"?renderAdd():view==="list"?renderList():renderSettings();
 }
 
 function renderHome(){
@@ -537,6 +545,7 @@ function renderHome(){
       <button class="btn" data-act="start-new" ${nl?"":"disabled"}>${newTxt}</button></div>
     ${soonRowHTML()}
   </section>
+  ${gHomeHTML()}
   <section><h2>これからの復習</h2>
     <div class="fc">${fc.map(f=>{const[,m,dd]=f.day.split("-").map(Number);return`<div><span class="n">${f.n}</span><span class="b ${f.n?"":"zero"}" style="height:${f.n?Math.max(6,Math.round(f.n/mx*56)):3}px"></span><span class="d">${m}/${dd}</span></div>`}).join("")}</div>
     <p class="note">正解すると 翌日 → 3日後 → 1週間後 → 2週間後 → 1ヶ月後 と間隔がのび、まちがえると翌日にもどります。</p>
@@ -557,6 +566,88 @@ function soonRowHTML(){
   const next=Math.min(...all.map(w=>w.soon)),min=Math.max(1,Math.ceil((next-Date.now())/60000));
   return`<div class="hero-row sub soon"><div><p class="label">おさらい（さっきの単語をもう一度）</p><p class="mid">${all.length}<small>語</small></p></div>
       <p class="soon-wait">${hm(next)}から<br><small>あと${min>=60?Math.floor(min/60)+"時間"+(min%60?min%60+"分":""):min+"分"}</small></p></div>`;
+}
+
+/* ---------- 文法クイズ ---------- */
+// S.grammar: [{id,set,type:"mc"|"input"|"order",q,choices,answer,exp,src,stage,due,ok,ng}]
+// mc=4択（answerは正解の番号）、input=書いて答える（answerは正解の文字。いくつか正解があれば配列）、order=並べかえ（answerは正しい文）
+let G=null;
+const gAll=()=>S.grammar||[];
+const gDue=()=>gAll().filter(g=>g.stage>0&&g.due&&g.due<=today());
+const gNew=()=>gAll().filter(g=>!g.stage);
+function gSets(){const m=new Map();gAll().forEach(g=>{if(!m.has(g.set))m.set(g.set,[]);m.get(g.set).push(g);});return[...m.entries()].sort((a,b)=>a[0].localeCompare(b[0],"ja",{numeric:true}));}
+const gNorm=s=>String(s||"").toLowerCase().replace(/[’‘]/g,"'").replace(/[.,!?;:"“”。、！？]/g," ").replace(/\s+/g," ").trim();
+const gAns=g=>g.type==="mc"?String((g.choices||[])[g.answer]||""):Array.isArray(g.answer)?String(g.answer[0]||""):String(g.answer||"");
+const gFmt=q=>esc(q).replace(/_{2,}|（\s*）|\(\s{0,3}\)/g,'<span class="blank">　　　</span>').replace(/\n/g,"<br>");
+function mergeGrammar(list,top){
+  S.grammar=gAll();const idx=new Map(S.grammar.map(g=>[g.set+"|"+gNorm(g.q),g]));let add=0,upd=0;
+  list.forEach(x=>{const set=x.set?(top?top+" "+x.set:x.set):(top||"文法");const k=set+"|"+gNorm(x.q);const o=idx.get(k);
+    if(o){Object.assign(o,{type:x.type,choices:x.choices,answer:x.answer,exp:x.exp,src:x.src});upd++;}
+    else{const g={id:uid(),set,type:x.type,q:x.q,choices:x.choices,answer:x.answer,exp:x.exp,src:x.src,stage:0,due:null,ok:0,ng:0};S.grammar.push(g);idx.set(k,g);add++;}});
+  save();return{add,upd};
+}
+function gHomeHTML(){
+  if(!gAll().length)return"";const due=gDue().length,nw=gNew().length,ss=gSets();
+  return`<section class="card hero gram"><div class="hero-row"><div><p class="label">文法クイズの復習</p><p class="big">${due}<small>問</small></p></div>
+    <button class="btn primary" data-act="g-review" ${due?"":"disabled"}>${due?"復習する":"今日の復習は完了"}</button></div>
+    <div class="hero-row sub"><div><p class="label">まだ解いていない問題</p><p class="mid">${nw}<small>問</small></p></div>
+    <button class="btn" data-act="g-new" ${nw?"":"disabled"}>${nw?`${Math.min(10,nw)}問解く`:"なし"}</button></div>
+    <details><summary class="note">Unitを選んで解く（${ss.length}）</summary><div class="sets">${ss.map(([n,gs])=>{const done=gs.filter(g=>g.stage>0).length;
+      return`<button class="set" data-act="g-set" data-set="${esc(n)}"><span class="set-name">${esc(n)}</span><span class="bar"><i style="width:${Math.round(done/gs.length*100)}%"></i></span><span class="set-num">${done}/${gs.length} 問</span></button>`;}).join("")}</div></details></section>`;
+}
+function gStart(mode,set){
+  let list=mode==="review"?shuffle(gDue()):mode==="new"?gNew().slice(0,10):gAll().filter(g=>g.set===set);
+  if(!list.length)return;
+  G={mode,set:mode==="set"?set:"",items:list.map(g=>g.id),i:0,res:{},done:false,lastT:Date.now()};gPrep();render();window.scrollTo(0,0);
+}
+function gPrep(){
+  const id=G.items[G.i];if(!id){gFinish();return;}
+  const g=gAll().find(x=>x.id===id);if(!g){G.i++;return gPrep();}
+  G.cur=g;G.answered=false;G.ok=false;G.pick=null;G.typed="";
+  if(g.type==="mc")G.order=shuffle((g.choices||[]).map((c,k)=>k));
+  if(g.type==="order"){G.tiles=shuffle(gAns(g).split(/\s+/).filter(Boolean).map(t=>({t})));G.built=[];}
+}
+function gTick(){if(!G)return;const now=Date.now(),dt=Math.min(Math.max(0,now-(G.lastT||now)),90000);G.lastT=now;S.stats.timeMs+=dt;
+  const d=S.days[today()]||(S.days[today()]={n:0,c:0});d.t=(d.t||0)+dt;}
+function gSettle(ok){
+  G.answered=true;G.ok=ok;gTick();const g=G.cur,t=today();
+  const r=G.res[g.id]||(G.res[g.id]={wrong:false});
+  const d=S.days[t]||(S.days[t]={n:0,c:0});d.n++;if(ok){d.c++;S.stats.correct++;}
+  if(!r.applied){r.applied=true; // その回の最初の答えで復習の間隔を決める
+    if(ok){g.ok=(g.ok||0)+1;const prev=g.stage||0;g.stage=Math.min(prev+1,6);g.due=addDays(t,prev===6?90:DAYS[g.stage]);}
+    else{g.ng=(g.ng||0)+1;g.stage=1;g.due=addDays(t,1);}}
+  if(!ok&&!r.wrong){r.wrong=true;G.items.push(g.id);} // まちがえた問題はこの回でもう1回
+  save();render();const nb=document.getElementById("g-next");if(nb)setTimeout(()=>nb.scrollIntoView({block:"end",behavior:"smooth"}),50);
+}
+function gCheck(){
+  const g=G.cur;
+  if(g.type==="input"){const el=document.getElementById("g-in");G.typed=el?el.value:"";const as=Array.isArray(g.answer)?g.answer:[g.answer];return gSettle(as.some(a=>gNorm(a)===gNorm(G.typed)));}
+  if(g.type==="order"){G.typed=G.built.map(x=>x.t).join(" ");return gSettle(gNorm(G.typed)===gNorm(gAns(g)));}
+}
+function gFinish(){G.done=true;gTick();checkMedals();save();}
+function renderGram(){
+  if(G.done){const ids=Object.keys(G.res),first=ids.filter(id=>!G.res[id].wrong).length;
+    return`<article class="card sum"><p class="kicker">文法クイズ${G.set?"・"+esc(G.set):""}</p>
+      <div class="stats"><div class="stat"><span>1回目で正解</span><b>${first}<small>/${ids.length}</small></b></div><div class="stat"><span>正答率</span><b>${ids.length?Math.round(first/ids.length*100):0}<small>%</small></b></div></div>
+      <p>${first<ids.length?"まちがえた問題は、明日の復習にもう一度出ます。":"全問正解！次の復習まで間隔がのびました。"}</p></article>
+      <button class="btn primary wide" data-act="g-home">ホームへ</button>`;}
+  const g=G.cur,total=G.items.length,pct=Math.round(G.i/total*100);
+  const head=`<div class="qhead"><button class="ghost" data-act="g-quit">やめる</button><div class="prog"><i style="width:${pct}%"></i></div><span class="count">${Math.min(G.i+1,total)}/${total}</span></div>`;
+  const kick=g.type==="mc"?"正しいものを選ぼう":g.type==="input"?"答えを書こう":"正しい順に並べよう";
+  let body="";
+  if(g.type==="mc")body=`<div class="opts">${G.order.map(k=>{let c="opt";if(G.answered){if(k===g.answer)c+=" is-ok";else if(k===G.pick)c+=" is-ng";else c+=" dim";}
+    return`<button class="${c}" data-act="g-pick" data-k="${k}" ${G.answered?"disabled":""}>${esc(g.choices[k])}</button>`;}).join("")}</div>`;
+  if(g.type==="input")body=`<input class="spell" id="g-in" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" value="${esc(G.typed)}" ${G.answered?"disabled":""} aria-label="答え">
+    ${G.answered?"":`<button class="btn primary wide" data-act="g-check">答え合わせ</button>`}`;
+  if(g.type==="order")body=`<div class="tiles built">${G.built.map((x,i)=>`<button class="tile" data-act="g-unt" data-i="${i}" ${G.answered?"disabled":""}>${esc(x.t)}</button>`).join("")||'<span class="note">下の語を、正しい順にタップしよう</span>'}</div>
+    <div class="tiles">${G.tiles.map((x,i)=>`<button class="tile" data-act="g-tile" data-i="${i}" ${G.answered?"disabled":""}>${esc(x.t)}</button>`).join("")}</div>
+    ${G.answered?"":`<button class="btn primary wide" data-act="g-check" ${G.tiles.length?"disabled":""}>答え合わせ</button>`}`;
+  const fb=G.answered?`<div class="fb ${G.ok?"ok":"ng"}"><p class="verdict">${G.ok?"正解！":"ざんねん"}</p>
+      ${G.ok&&g.type==="mc"?"":`<p class="fb-ans">正解：<b>${esc(gAns(g))}</b></p>`}
+      ${!G.ok&&g.type!=="mc"?`<p class="hint">あなたの答え：${esc(G.typed||"（空らん）")}</p>`:""}
+      ${g.exp?`<p class="gexp">${esc(g.exp)}</p>`:""}${!G.ok?`<p class="hint">このあともう一度出ます。</p>`:""}</div>
+    <button class="btn primary wide" data-act="g-next" id="g-next">${G.i>=G.items.length-1?"結果を見る":"次へ"}</button>`:"";
+  return head+`<article class="card qcard gq"><p class="kicker">${esc(g.set)}・${kick}</p><p class="gq-text">${gFmt(g.q)}</p>${g.src?`<p class="note">${esc(g.src)}</p>`:""}</article>`+body+fb;
 }
 
 /* ---------- quiz ---------- */
@@ -1134,7 +1225,13 @@ function parseAiReply(text){
     w:str(w.word||w.surface),ja:str(w.meaning_ja||w.meaning),ex:str(w.sentence),
     para:str(w.meaning_en),syn:str(w.syn),ant:str(w.ant),exJa:str(w.sentence_ja),ipa:str(w.reading).replace(/^\/+|\/+$/g,"").replace(/^\[|\]$/g,""),pos:str(w.pos),note:str(w.note),set:str(w.set)}));
   const prio=Number(d.prio)||0;items.forEach((it,k)=>{const wp=Number((d.words[k]||{}).prio)||0;it.prio=wp||prio||(it.ex?2:1);});
-  const seen=new Set();return{share:!!d.share,set:str(d.set),items:items.filter(it=>{const k=norm(it.w);if(seen.has(k))return false;seen.add(k);return true;})};
+  const grammar=(Array.isArray(d.grammar)?d.grammar:[]).filter(q=>q&&(q.question||q.q)).map(q=>{
+    const ch=Array.isArray(q.choices)?q.choices.map(str):[];
+    const type=["mc","input","order"].includes(q.type)?q.type:(ch.length>=2?"mc":"input");
+    const ans=type==="mc"?Number(q.answer)||0:Array.isArray(q.answer)?q.answer.map(str):str(q.answer);
+    return{type,q:str(q.question||q.q),choices:ch,answer:ans,exp:str(q.explanation||q.exp),src:str(q.source||q.src),set:str(q.set)};
+  }).filter(g=>g.type==="mc"?g.choices.length>=2&&g.answer>=0&&g.answer<g.choices.length:!!gAns(g));
+  const seen=new Set();return{share:!!d.share,set:str(d.set),grammar,items:items.filter(it=>{const k=norm(it.w);if(seen.has(k))return false;seen.add(k);return true;})};
 }
 /* ---------- ほかのスマホに単語を送る（LINEなどで送るコード） ---------- */
 const SHARE_TAG="CDRILL1:";
@@ -1154,6 +1251,8 @@ async function takeAny(text){ // 貼りつけた文：送るコードなら開�
   if(m){try{text=await unpackText(m[1].replace(/\s+/g,""));}catch(e){toast("コードが読み取れませんでした。メッセージ全体をコピーしてください");return;}}
   aiTake(text);
 }
+function shareGrammar(sel){return gAll().filter(g=>sel.has("g:"+g.set)).map(g=>{const o={set:g.set,type:g.type,question:g.q,answer:g.answer};
+  if(g.choices&&g.choices.length)o.choices=g.choices;if(g.exp)o.explanation=g.exp;if(g.src)o.source=g.src;return o;});}
 function shareWords(sets){
   return S.words.filter(w=>sets.has(w.set)).map(w=>{const o={word:w.w,meaning_ja:w.ja,set:w.set};
     if(w.ex)o.sentence=w.ex;if(w.exJa)o.sentence_ja=w.exJa;if(w.para)o.meaning_en=w.para;if(w.ipa)o.reading=w.ipa;
@@ -1164,8 +1263,9 @@ function shareHTML(){
   const ss=sets();
   return`<section class="card panel"><h2>単語をほかのスマホに送る</h2>
     <p class="note">選んだセットの単語を、LINEなどで送れるコードにします。受け取った人は、メッセージをコピーして「追加」→「② 貼りつけて取りこむ」を押すと入ります（相手の学習記録は消えません）。</p>
-    <details${shareOpen?" open":""} id="share-d"><summary class="note">セットを選ぶ（${shareSel.size}セット・${ss.filter(([n])=>shareSel.has(n)).reduce((a,[,ws])=>a+ws.length,0)}語）</summary>
-      <div class="share-list">${ss.map(([n,ws])=>`<label><input type="checkbox" data-share="${esc(n)}" ${shareSel.has(n)?"checked":""}>${esc(n)}<span class="note">　${ws.length}語</span></label>`).join("")}</div></details>
+    <details${shareOpen?" open":""} id="share-d"><summary class="note">セットを選ぶ（${shareSel.size}セット・${ss.filter(([n])=>shareSel.has(n)).reduce((a,[,ws])=>a+ws.length,0)}語${gSets().some(([n])=>shareSel.has("g:"+n))?`・文法${gSets().filter(([n])=>shareSel.has("g:"+n)).reduce((a,[,gs])=>a+gs.length,0)}問`:""}）</summary>
+      <div class="share-list">${ss.map(([n,ws])=>`<label><input type="checkbox" data-share="${esc(n)}" ${shareSel.has(n)?"checked":""}>${esc(n)}<span class="note">　${ws.length}語</span></label>`).join("")}
+        ${gSets().map(([n,gs])=>`<label><input type="checkbox" data-share="g:${esc(n)}" ${shareSel.has("g:"+n)?"checked":""}>文法：${esc(n)}<span class="note">　${gs.length}問</span></label>`).join("")}</div></details>
     <button class="btn primary" data-act="share-make" ${shareSel.size?"":"disabled"}>送るコードを作る</button>
     ${shareMsg?`<textarea id="share-out" rows="3" readonly>${esc(shareMsg)}</textarea>
       <p class="note">${shareMsg.length.toLocaleString()}文字${shareMsg.length>9000?"。LINEは1回に送れる文字数に上限があるので、セットを減らして何回かに分けてください":""}</p>
@@ -1174,7 +1274,10 @@ function shareHTML(){
 }
 function aiTake(text){
   let r;try{r=parseAiReply(text);}catch(e){toast("まとめの部分が見つかりませんでした。返事の最後のコード欄をコピーしてください");return;}
-  if(!r.items.length){toast("取りこめる単語が見つかりませんでした");return;}
+  let gmsg="";
+  if(r.grammar&&r.grammar.length){const m=mergeGrammar(r.grammar,r.share?"":r.set);gmsg=`文法問題を${m.add}問追加${m.upd?`・${m.upd}問更新`:""}しました`;}
+  if(!r.items.length){if(gmsg){toast(gmsg+"（ホームの「文法クイズ」から解けます）");render();}else toast("取りこめる単語が見つかりませんでした");return;}
+  if(gmsg)setTimeout(()=>toast(gmsg),2800);
   const sn=((document.getElementById("setname")||{}).value||"").trim();
   const groups=new Set(r.items.map(it=>it.set).filter(Boolean)).size;
   preview={set:sn||r.set||(r.share?"":aiMode==="red"?"赤線":""),items:r.items,ai:true,groups};aiFallback=false;ocrMsg="";render();
@@ -1262,6 +1365,15 @@ document.addEventListener("click",e=>{
   if(a==="pick"){if(Q.answered)return;Q.pick=b.dataset.id;return settle(Q.pick===Q.cur.w.id);}
   if(a==="check"){const v=document.getElementById("spell").value;Q.typed=v;return settle(norm(v)===norm(Q.cur.w.w));}
   if(a==="next")return next();
+  if(a==="g-review")return gStart("review");
+  if(a==="g-new")return gStart("new");
+  if(a==="g-set")return gStart("set",b.dataset.set);
+  if(a==="g-pick"){if(G.answered)return;G.pick=Number(b.dataset.k);return gSettle(G.pick===G.cur.answer);}
+  if(a==="g-check"){if(!G.answered)gCheck();return;}
+  if(a==="g-tile"){const x=G.tiles.splice(Number(b.dataset.i),1)[0];if(x)G.built.push(x);render();return;}
+  if(a==="g-unt"){const x=G.built.splice(Number(b.dataset.i),1)[0];if(x)G.tiles.push(x);render();return;}
+  if(a==="g-next"){gTick();G.i++;gPrep();render();window.scrollTo(0,0);return;}
+  if(a==="g-quit"||a==="g-home"){if(G&&!G.done){gTick();save();}G=null;view="home";render();window.scrollTo(0,0);return;}
   if(a==="grade")return grade(b.dataset.g);
   if(a==="known")return known();
   if(a==="quit"){tick();applySRS();checkMedals();save();Q=null;view="home";render();if(true)toast("ここまでの結果を保存しました");return;}
@@ -1280,10 +1392,11 @@ document.addEventListener("click",e=>{
     const fb=()=>{aiFallback=true;render();document.getElementById("ai-text").focus();toast("下の欄に長押しで貼りつけて、「この内容で取りこむ」を押してください");};
     try{navigator.clipboard.readText().then(t=>t&&t.trim()?takeAny(t):toast("コピーされた内容がありません"),fb);}catch(e){fb();}return;}
   if(a==="ai-take"){takeAny(document.getElementById("ai-text").value);return;}
-  if(a==="share-make"){const sel=new Set(shareSel),ws=shareWords(sel);
-    const json=JSON.stringify({set:"",share:true,words:ws,questions:[]});
+  if(a==="share-make"){const sel=new Set(shareSel),ws=shareWords(sel),gs=shareGrammar(sel);
+    const json=JSON.stringify({set:"",share:true,words:ws,grammar:gs,questions:[]});
     packText(json).then(code=>{const names=[...sel];
-      shareMsg=`C単語ドリルの単語（${names.length>2?names.slice(0,2).join("、")+` ほか${names.length-2}セット`:names.join("、")}・${ws.length}語）です。\nこのメッセージを長押しでコピーして、単語ドリルの「追加」→「② 貼りつけて取りこむ」を押してね。\n${code}`;
+      const nm=names.map(n=>n.replace(/^g:/,"文法："));
+      shareMsg=`C単語ドリルの単語（${nm.length>2?nm.slice(0,2).join("、")+` ほか${nm.length-2}セット`:nm.join("、")}・${ws.length}語${gs.length?`・文法${gs.length}問`:""}）です。\nこのメッセージを長押しでコピーして、単語ドリルの「追加」→「② 貼りつけて取りこむ」を押してね。\n${code}`;
       shareOpen=false;render();const el=document.getElementById("share-out");if(el)el.scrollIntoView({behavior:"smooth",block:"center"});});return;}
   if(a==="share-send"){if(navigator.share){navigator.share({text:shareMsg}).catch(()=>{});}else{location.href="https://line.me/R/share?text="+encodeURIComponent(shareMsg);}return;}
   if(a==="share-copy"){const ta=document.getElementById("share-out");const sel=()=>{ta.focus();ta.select();toast("選択しました。長押しでコピーしてください");};
@@ -1366,6 +1479,7 @@ document.addEventListener("input",e=>{
   if(e.target.id==="paste")draft=e.target.value;
 });
 document.addEventListener("keydown",e=>{
+  if(e.key==="Enter"&&e.target.id==="g-in"&&G&&!G.answered){e.preventDefault();gCheck();return;}
   if(e.key==="Enter"&&e.target.id==="spell"&&Q&&!Q.answered){e.preventDefault();const v=e.target.value;Q.typed=v;settle(norm(v)===norm(Q.cur.w.w));}
 });
 setInterval(()=>{if(view==="home"&&!Q&&soonAll().length)render();},30000);
