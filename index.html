@@ -344,7 +344,7 @@ const SEED=[
 ];
 
 const KEY="c-drill-v1";
-const APP_VER="2026-11-21d"; // 画面を変えたら上げる（設定の一番下に表示。新しい版があれば自動で読みこみ直す）
+const APP_VER="2026-11-21e"; // 画面を変えたら上げる（設定の一番下に表示。新しい版があれば自動で読みこみ直す）
 const DAYS=[0,1,3,7,14,30,60];
 const LV=["未学習","Lv.1","Lv.2","Lv.3","Lv.4","Lv.5","定着"];
 const TYPES={en2ja:"英語を見て意味を選ぶ",ja2en:"意味を見て英語を選ぶ",cloze:"例文の空欄に入る語を選ぶ",listen:"発音を聞いて意味を選ぶ",spell:"つづりを書く（Lv.2から）",para:"ふつうの英語からネイティブの表現を選ぶ"};
@@ -812,9 +812,12 @@ function parseRows(lines){
     if(!LAT.test(en))return null;
     // 「A から離れる」のように、意味が A/B などの記号＋助詞で始まるときは記号を意味の側へ
     const mm=en.match(/^(.*\S)\s+([A-Z]|[〜～~])\s*$/);if(mm&&/^(を|に|が|から|と|で|へ|の|より|として)/.test(ja)){en=mm[1];ja=mm[2]+" "+ja;}
+    const mp=en.match(/^(.*?)\s*[(（]\s*([A-Z]|[〜～~])?\s*$/);if(mp&&mp[1]&&/[)）]?$/.test(mp[1])){en=mp[1];ja="("+(mp[2]?mp[2]+" ":"")+ja;} // 「(from A)(A から)逃げる」
     en=cleanEn(en);if(/to remember/i.test(en))return null;return en.length>=2?{w:en,ja:cleanJ(ja),ex:"",ipa}:null;};
   // 表の何行分かが1行につながったときは、「意味」のあとに「単語 [」が来るところで行を分ける
-  lines=lines.flatMap(l=>l.replace(/([぀-ヿ㐀-鿿）)])[\s\d.]*(?=[A-Za-z][A-Za-z'\- ]{0,30}\s*\[)/g,"$1\n").split("\n")).map(s=>s.trim()).filter(Boolean);
+  lines=lines.flatMap(l=>l.replace(/([぀-ヿ㐀-鿿）)])[\s\d.]*(?=[A-Za-z][A-Za-z'\- ]{0,30}\s*\[)/g,"$1\n")
+    // 2列のページ：左の意味のあとに右の列の熟語が続くときは、そこで分ける
+    .replace(/([぀-ヿ㐀-鿿）)\]])\s+(?=[a-z][a-z'\-]+[^぀-ヿ㐀-鿿]*[぀-ヿ㐀-鿿])/g,"$1\n").split("\n")).map(s=>s.trim()).filter(Boolean);
   const rows=lines.map(split);const hit=rows.filter(Boolean).length;
   if(hit>=2&&hit>=lines.filter(l=>LAT.test(l)).length*0.4){
     // 横並びの表：日本語が読めなかった行も英語だけ残して、確認画面で意味を入れてもらう
@@ -841,18 +844,32 @@ function tidyOcr(items){
   const ok=t=>{const x=t.toLowerCase().replace(/[^a-z'\-]/g,"");if(!x)return false;
     return /^(a|b|c|sb|sth|one's|oneself|someone|something)$/.test(x)||!!(IPA&&(IPA[x]||IPA[x.replace(/'s$/,"")]))||(!IPA&&x.length>2);};
   const words=w=>w.split(/[\s\/]+/).filter(Boolean);
+  const SHORT=new Set(["be","go","do","up","on","in","it","at","by","of","to","so","no","my","me","we","us","he","an","as","or","if"]);
   return items.map(it=>{
-    let ts=it.w.split(" ");
+    let w0=it.w.replace(/^[^A-Za-z(〜～~]+/,"");
+    // 「keep away A / keep A away」：うしろ半分の最初の動詞より前は、となりのページの文字なので切る
+    const sl=w0.split(" / ");if(sl.length===2){const v=sl[1].trim().split(" ")[0].toLowerCase();const k=sl[0].toLowerCase().split(" ").lastIndexOf(v);
+      if(v.length>=2&&k>0)w0=sl[0].split(" ").slice(k).join(" ")+" / "+sl[1];}
+    let ts=w0.split(" ");
+    while(ts.length>1&&(/[^A-Za-z'()\/〜～~\-]/.test(ts[0])||(ts[0].replace(/[^A-Za-z]/g,"").length<=2&&!SHORT.has(ts[0].toLowerCase()))||!ok(ts[0]))&&ts.slice(1).some(ok))ts.shift(); // 前のゴミ
     while(ts.length>1&&!ok(ts[ts.length-1])&&ts[ts.length-1].length<=6&&ts.slice(0,-1).some(ok))ts.pop(); // うしろのゴミ
-    const w=ts.join(" ").replace(/[\s\/]+$/,"");
+    let w=ts.join(" ").replace(/[\s\/]+$/,"").replace(/\)\s*\([A-Z0-9]{2,}\)?$/,")"); // 「(to A)(AID)」の読みまちがい
+    {const h=w.split(" / ");if(h.length===2&&/ [A-Z]$/.test(h[1])&&h[1].split(" ").length>h[0].split(" ").length)w=h[0]+" / "+h[1].replace(/ [A-Z]$/,"");}
     const ws=words(w).filter(t=>/[A-Za-z]/.test(t));const good=ws.filter(ok).length;
     const real=ws.filter(t=>ok(t)&&t.replace(/[^A-Za-z]/g,"").length>=3&&!/^(sb|sth)$/i.test(t)).length;
-    if(!ws.length||!real||good<Math.max(1,ws.length*0.6)||/to remember/i.test(w))return null; // 英語として読めない行・見出し
-    let ja=String(it.ja||"").replace(/[ー一\-—_~*?？\s]{2,}$/,"").replace(/[^぀-ヿ㐀-鿿）)]+$/,"").trim();
+    const shortish=ws.filter(t=>t.replace(/[^A-Za-z]/g,"").length<=2).length;
+    if(!ws.length||!real||good<Math.max(1,ws.length*0.6)||/to remember/i.test(w)||shortish>ws.length/2&&ws.length>3)return null; // 英語として読めない行・見出し
+    if(!it.ja&&ws.length===1&&/^(unit|part|lesson|chapter|page|day|step|stage|level|section|review)$/i.test(w))return null;
+    let ja=String(it.ja||"").replace(/\[[^\]]*\]?/g," ").replace(/(^|\s)(?!A(\s|$))[A-Za-z]{2,}(?=\s|$)/g," ") // 発音記号や品詞マークの読みまちがい
+      .replace(/^[^぀-ヿ㐀-鿿(（A]+/,"").replace(/^[ー一－―‐\s]+/,"");
+    for(let k=0;k<2;k++)ja=ja.replace(/[^぀-ヿ㐀-鿿）)]+$/,"").replace(/[ー一－―‐\-—_~*?？\s]+$/,"");
+    ja=ja.replace(/\s+/g," ").trim();
     if((ja.match(/[぀-ヿ㐀-鿿]/g)||[]).length<2)ja="";
     let ex=it.ex||"";const et=ex.split(/\s+/).filter(t=>/[A-Za-z]/.test(t));
     if(ex&&(et.length<3||et.filter(ok).length<et.length*0.6))ex=""; // くずれた例文
-    return Object.assign({},it,{w,ja,ex});
+    if(!ja&&ws.length===1)return null; // 意味のない1語だけの行（見出しのかけらなど）
+    const ipa=/[əɪæʃʒθðŋɔʊʌɑːˈ́]/.test(it.ipa||"")?it.ipa:""; // 発音記号らしくないものは捨てる（辞書の発音記号を使う）
+    return Object.assign({},it,{w,ja,ex,ipa});
   }).filter(Boolean);
 }
 function parseText(txt){
