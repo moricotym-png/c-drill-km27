@@ -172,6 +172,7 @@ textarea{resize:vertical;font-size:14px}
 .empty{color:var(--muted);text-align:center;padding:30px 0}
 
 .seg{display:flex;gap:6px;flex-wrap:wrap}
+.share-list{max-height:260px;overflow:auto;display:flex;flex-direction:column;gap:6px;margin:8px 0;padding:4px 2px}
 .mix{margin:2px 0 0;font-size:11.5px}
 .grade-q{margin:4px 0 0;text-align:center;font-weight:700;font-size:14px;color:var(--muted)}
 .grades{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.grades.two{grid-template-columns:repeat(2,1fr)}
@@ -344,7 +345,7 @@ const SEED=[
 ];
 
 const KEY="c-drill-v1";
-const APP_VER="2026-11-21g"; // 画面を変えたら上げる（設定の一番下に表示。新しい版があれば自動で読みこみ直す）
+const APP_VER="2026-11-21h"; // 画面を変えたら上げる（設定の一番下に表示。新しい版があれば自動で読みこみ直す）
 const DAYS=[0,1,3,7,14,30,60];
 const LV=["未学習","Lv.1","Lv.2","Lv.3","Lv.4","Lv.5","定着"];
 const TYPES={en2ja:"英語を見て意味を選ぶ",ja2en:"意味を見て英語を選ぶ",cloze:"例文の空欄に入る語を選ぶ",listen:"発音を聞いて意味を選ぶ",spell:"つづりを書く（Lv.2から）",para:"ふつうの英語からネイティブの表現を選ぶ"};
@@ -1132,15 +1133,51 @@ function parseAiReply(text){
   const items=(Array.isArray(d.words)?d.words:[]).filter(w=>w&&(w.word||w.surface)).map(w=>({
     w:str(w.word||w.surface),ja:str(w.meaning_ja||w.meaning),ex:str(w.sentence),
     para:str(w.meaning_en),syn:str(w.syn),ant:str(w.ant),exJa:str(w.sentence_ja),ipa:str(w.reading).replace(/^\/+|\/+$/g,"").replace(/^\[|\]$/g,""),pos:str(w.pos),note:str(w.note),set:str(w.set)}));
-  const prio=Number(d.prio)||0;items.forEach(it=>{it.prio=prio||(it.ex?2:1);});
-  const seen=new Set();return{set:str(d.set),items:items.filter(it=>{const k=norm(it.w);if(seen.has(k))return false;seen.add(k);return true;})};
+  const prio=Number(d.prio)||0;items.forEach((it,k)=>{const wp=Number((d.words[k]||{}).prio)||0;it.prio=wp||prio||(it.ex?2:1);});
+  const seen=new Set();return{share:!!d.share,set:str(d.set),items:items.filter(it=>{const k=norm(it.w);if(seen.has(k))return false;seen.add(k);return true;})};
+}
+/* ---------- ほかのスマホに単語を送る（LINEなどで送るコード） ---------- */
+const SHARE_TAG="CDRILL1:";
+const b64enc=buf=>{const u=new Uint8Array(buf);let s="";for(let i=0;i<u.length;i+=0x8000)s+=String.fromCharCode.apply(null,u.subarray(i,i+0x8000));return btoa(s);};
+const b64dec=t=>{const s=atob(t);const u=new Uint8Array(s.length);for(let i=0;i<s.length;i++)u[i]=s.charCodeAt(i);return u;};
+async function packText(str){
+  if(typeof CompressionStream==="undefined")return str; // 古いスマホはそのままの文字で
+  const cs=new Blob([str]).stream().pipeThrough(new CompressionStream("deflate-raw"));
+  return SHARE_TAG+b64enc(await new Response(cs).arrayBuffer());
+}
+async function unpackText(code){
+  const ds=new Blob([b64dec(code)]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
+  return await new Response(ds).text();
+}
+async function takeAny(text){ // 貼りつけた文：送るコードなら開いてから取りこむ
+  const m=String(text||"").match(/CDRILL1:([A-Za-z0-9+\/=\s]+)/);
+  if(m){try{text=await unpackText(m[1].replace(/\s+/g,""));}catch(e){toast("コードが読み取れませんでした。メッセージ全体をコピーしてください");return;}}
+  aiTake(text);
+}
+function shareWords(sets){
+  return S.words.filter(w=>sets.has(w.set)).map(w=>{const o={word:w.w,meaning_ja:w.ja,set:w.set};
+    if(w.ex)o.sentence=w.ex;if(w.exJa)o.sentence_ja=w.exJa;if(w.para)o.meaning_en=w.para;if(w.ipa)o.reading=w.ipa;
+    if(w.note)o.note=w.note;if(w.syn)o.syn=w.syn;if(w.ant)o.ant=w.ant;if(w.prio)o.prio=w.prio;return o;});
+}
+let shareSel=new Set(),shareMsg="",shareOpen=false;
+function shareHTML(){
+  const ss=sets();
+  return`<section class="card panel"><h2>単語をほかのスマホに送る</h2>
+    <p class="note">選んだセットの単語を、LINEなどで送れるコードにします。受け取った人は、メッセージをコピーして「追加」→「② 貼りつけて取りこむ」を押すと入ります（相手の学習記録は消えません）。</p>
+    <details${shareOpen?" open":""} id="share-d"><summary class="note">セットを選ぶ（${shareSel.size}セット・${ss.filter(([n])=>shareSel.has(n)).reduce((a,[,ws])=>a+ws.length,0)}語）</summary>
+      <div class="share-list">${ss.map(([n,ws])=>`<label><input type="checkbox" data-share="${esc(n)}" ${shareSel.has(n)?"checked":""}>${esc(n)}<span class="note">　${ws.length}語</span></label>`).join("")}</div></details>
+    <button class="btn primary" data-act="share-make" ${shareSel.size?"":"disabled"}>送るコードを作る</button>
+    ${shareMsg?`<textarea id="share-out" rows="3" readonly>${esc(shareMsg)}</textarea>
+      <p class="note">${shareMsg.length.toLocaleString()}文字${shareMsg.length>9000?"。LINEは1回に送れる文字数に上限があるので、セットを減らして何回かに分けてください":""}</p>
+      <div class="row-btns"><button class="btn primary" data-act="share-send">LINEなどで送る</button><button class="btn" data-act="share-copy">コピー</button></div>`:""}
+  </section>`;
 }
 function aiTake(text){
   let r;try{r=parseAiReply(text);}catch(e){toast("まとめの部分が見つかりませんでした。返事の最後のコード欄をコピーしてください");return;}
   if(!r.items.length){toast("取りこめる単語が見つかりませんでした");return;}
   const sn=((document.getElementById("setname")||{}).value||"").trim();
   const groups=new Set(r.items.map(it=>it.set).filter(Boolean)).size;
-  preview={set:sn||r.set||(aiMode==="red"?"赤線":""),items:r.items,ai:true,groups};aiFallback=false;ocrMsg="";render();
+  preview={set:sn||r.set||(r.share?"":aiMode==="red"?"赤線":""),items:r.items,ai:true,groups};aiFallback=false;ocrMsg="";render();
   const el=document.getElementById("preview");if(el)el.scrollIntoView({behavior:"smooth",block:"start"});
   toast(`${r.items.length}語を読みこみました`);
 }
@@ -1200,6 +1237,7 @@ function renderSettings(){
   <section class="card panel"><h2>出題の種類</h2>
     <div class="checks">${Object.entries(TYPES).map(([k,v])=>`<label><input type="checkbox" id="t-${k}" data-type="${k}" ${S.settings.types[k]?"checked":""} ${k==="listen"&&!hasSpeech?"disabled":""}>${v}</label>`).join("")}</div>
     ${hasSpeech?"":'<p class="note">このブラウザでは音声が使えません。</p>'}</section>
+  ${shareHTML()}
   <section class="card panel"><h2>バックアップ</h2>
     <p class="note">学習の記録はこのスマホのブラウザに保存されます。履歴を消したり機種変更したりする前に、コードを作ってメモやLINEのKeepに保存しておくと、あとで元に戻せます。</p>
     <button class="btn" data-act="mk-backup">バックアップコードを作る</button>
@@ -1240,8 +1278,16 @@ document.addEventListener("click",e=>{
     try{navigator.clipboard.writeText(t).then(()=>toast("コピーしました。Claudeのアプリに貼りつけてください"),fb);}catch(e){fb();}return;}
   if(a==="ai-paste"){
     const fb=()=>{aiFallback=true;render();document.getElementById("ai-text").focus();toast("下の欄に長押しで貼りつけて、「この内容で取りこむ」を押してください");};
-    try{navigator.clipboard.readText().then(t=>t&&t.trim()?aiTake(t):toast("コピーされた内容がありません"),fb);}catch(e){fb();}return;}
-  if(a==="ai-take"){aiTake(document.getElementById("ai-text").value);return;}
+    try{navigator.clipboard.readText().then(t=>t&&t.trim()?takeAny(t):toast("コピーされた内容がありません"),fb);}catch(e){fb();}return;}
+  if(a==="ai-take"){takeAny(document.getElementById("ai-text").value);return;}
+  if(a==="share-make"){const sel=new Set(shareSel),ws=shareWords(sel);
+    const json=JSON.stringify({set:"",share:true,words:ws,questions:[]});
+    packText(json).then(code=>{const names=[...sel];
+      shareMsg=`C単語ドリルの単語（${names.length>2?names.slice(0,2).join("、")+` ほか${names.length-2}セット`:names.join("、")}・${ws.length}語）です。\nこのメッセージを長押しでコピーして、単語ドリルの「追加」→「② 貼りつけて取りこむ」を押してね。\n${code}`;
+      shareOpen=false;render();const el=document.getElementById("share-out");if(el)el.scrollIntoView({behavior:"smooth",block:"center"});});return;}
+  if(a==="share-send"){if(navigator.share){navigator.share({text:shareMsg}).catch(()=>{});}else{location.href="https://line.me/R/share?text="+encodeURIComponent(shareMsg);}return;}
+  if(a==="share-copy"){const ta=document.getElementById("share-out");const sel=()=>{ta.focus();ta.select();toast("選択しました。長押しでコピーしてください");};
+    try{navigator.clipboard.writeText(shareMsg).then(()=>toast("コピーしました。LINEに貼りつけて送ってください"),sel);}catch(e){sel();}return;}
   if(a==="commit-big"){
     const up=x=>/^[a-z]+\d+$/i.test(x)?x.toUpperCase():x;
     const top=up(document.getElementById("setname").value.trim()||preview.set||"");
@@ -1299,10 +1345,11 @@ document.addEventListener("click",e=>{
 });
 document.addEventListener("change",e=>{
   const t=e.target;
+  if(t.dataset&&t.dataset.share!==undefined){if(t.checked)shareSel.add(t.dataset.share);else shareSel.delete(t.dataset.share);shareMsg="";shareOpen=true;render();return;}
   if(t.dataset&&t.dataset.book!==undefined){S.settings.newOff=S.settings.newOff||{};if(t.checked)delete S.settings.newOff[t.dataset.book];else S.settings.newOff[t.dataset.book]=true;save();return;}
   if(t.dataset&&t.dataset.aifile!==undefined){const f=t.files&&t.files[0];if(!f){toast("ファイルが選ばれていません");return;}
     toast(`${f.name} を読みこみ中…`);
-    const done=txt=>{t.value="";if(!txt||!txt.trim()){toast("ファイルの中身が空でした");return;}aiTake(txt);};
+    const done=txt=>{t.value="";if(!txt||!txt.trim()){toast("ファイルの中身が空でした");return;}takeAny(txt);};
     const fail=err=>{t.value="";toast("ファイルを読めませんでした（"+((err&&err.message)||"不明")+"）。一度スマホに保存してから選んでください");};
     try{const r=new FileReader();r.onload=()=>done(String(r.result||""));r.onerror=()=>fail(r.error);r.readAsText(f,"utf-8");}catch(err){fail(err);}
     return;}
