@@ -798,8 +798,37 @@ function renderSummary(){
 
 /* ---------- add ---------- */
 const NOISE=["back to course","words to remember","list of words","review the words","continue","learned","free mode","practice","tap the +","must finish","my words","when you are ready"];
+// 1行に「英語　日本語」が並ぶ単語帳（熟語集など）と、英語の行のあとに日本語の行がまとめて並ぶ形（iPhoneの文字読み取りなど）
+function parseRows(lines){
+  const JA=/[぀-ヿ㐀-鿿]/,LAT=/[A-Za-z]{2,}/;
+  const cleanEn=e=>e.replace(/[_|]+/g," ").replace(/\s+/g," ").trim().replace(/^[^A-Za-z(〜～~]+|[^A-Za-z)〜～~.']+$/g,"")
+    .split(" ").map(t=>t.length>1&&/^[A-Za-z]+$/.test(t)?t.toLowerCase():t).join(" ");
+  const cleanJ=j=>cleanJa(j).replace(/\s+/g," ").trim();
+  const split=line=>{const j=line.search(JA);if(j<=0)return null;let en=line.slice(0,j).replace(/[_|]+/g," "),ja=line.slice(j);
+    if(!LAT.test(en))return null;
+    // 「A から離れる」のように、意味が A/B などの記号＋助詞で始まるときは記号を意味の側へ
+    const mm=en.match(/^(.*\S)\s+([A-Z]|[〜～~])\s*$/);if(mm&&/^(を|に|が|から|と|で|へ|の|より|として)/.test(ja)){en=mm[1];ja=mm[2]+" "+ja;}
+    en=cleanEn(en);return en.length>=2?{w:en,ja:cleanJ(ja),ex:""}:null;};
+  const rows=lines.map(split);const hit=rows.filter(Boolean).length;
+  if(hit>=2&&hit>=lines.filter(l=>LAT.test(l)).length*0.4){
+    // 横並びの表：日本語が読めなかった行も英語だけ残して、確認画面で意味を入れてもらう
+    return lines.map((l,i)=>rows[i]||(!JA.test(l)&&LAT.test(l)&&l.length<70&&!/[.?!]$/.test(l)?{w:cleanEn(l),ja:"",ex:""}:null)).filter(x=>x&&x.w);
+  }
+  // 英語の行が続いたあと、同じ数の日本語の行が続く形
+  const sentence=l=>/[.?!"”]$/.test(l)||l.split(" ").length>8;
+  const kind=lines.map(l=>JA.test(l)?"J":LAT.test(l)?"E":"-");const out=[];let used=0;
+  for(let i=0;i<lines.length;){
+    if(kind[i]!=="E"){i++;continue;}
+    let a=i;while(a<lines.length&&kind[a]==="E")a++;let b=a;while(b<lines.length&&kind[b]==="J")b++;
+    const ne=a-i,nj=b-a;
+    if(ne===nj&&!lines.slice(i,a).some(sentence)){for(let k=0;k<ne;k++)out.push({w:cleanEn(lines[i+k]),ja:cleanJ(lines[a+k]),ex:""});used+=ne*2;i=b;}else i=a;
+  }
+  // 例文つきの単語帳（英単語・意味・例文の順）はこれまでの読み方に任せる
+  return out.length>=2&&used>=kind.filter(k=>k!=="-").length*0.8?out:null;
+}
 function parseText(txt){
   const m=txt.match(/\(\s*([A-Za-z]\s*\d+)\s*\)/);const set=m?m[1].replace(/\s/g,"").toUpperCase():"";
+  {const ls=txt.split(/\r?\n/).map(s=>s.replace(/[​ \s]+/g," ").trim()).filter(Boolean);const r=parseRows(ls);if(r&&r.length)return{set,items:r};}
   const isJa=s=>/[぀-ヿ㐀-鿿]/.test(s);
   const isWord=s=>/^[A-Za-z][A-Za-z'\-]*( [A-Za-z'\-]+){0,2}$/.test(s)&&s.length<=30;
   const lines=txt.split(/\r?\n/).map(s=>s.replace(/[​ \s]+/g," ").trim()).filter(Boolean);
@@ -842,7 +871,7 @@ function renderAdd(){
   const off=ocrBusy?" off":"",dis=ocrBusy?"disabled":"";
   return `<header class="top"><div><p class="eyebrow">単語を追加</p><h1>写真から取りこむ</h1></div></header>
   ${aiCardHTML()}
-  <h2 class="sub-h">スマホだけで読み取る <span class="note">すぐできるけど、精度は低め</span></h2>
+  <h2 class="sub-h">スマホだけで読み取る <span class="note">すぐできるけど、日本語の精度は低め。iPhoneは下の「カメラの文字読み取り」のほうが正確です</span></h2>
   <div class="photo-btns">
     <label class="btn wide photo${off}"><input type="file" accept="image/*" multiple data-ocr="list" ${dis}>${CAM}単語リストを撮る</label>
     <label class="btn wide photo${off}"><input type="file" accept="image/*" multiple data-ocr="red" ${dis}>${PEN}長文の赤線の単語を撮る</label>
@@ -851,11 +880,11 @@ function renderAdd(){
   <div id="ocr-status">${ocrStatusHTML()}</div>
   <div class="field"><label class="label" for="setname">${preview&&preview.groups?"本の名前（入れるとセット名の前につきます）":"セット名（空らんなら自動で読み取り）"}</label><input type="text" id="setname" placeholder="例：C10" value="${esc(preview?preview.set:"")}"></div>
   <div id="preview">${previewHTML()}</div>
-  <details class="card manual"${draft&&!preview?" open":""}><summary>コピーした文字を貼りつける${draft?"（読み取った文字）":""}</summary>
+  <details class="card manual"${draft&&!preview?" open":""}><summary>カメラの文字読み取りを貼りつける${draft?"（読み取った文字）":"（iPhoneにおすすめ）"}</summary>
     <ol class="steps-ol">
-      <li>写真アプリで単語リストのスクショを開く</li>
-      <li>文字を長押しして「すべてを選択」→「コピー」<span class="note">Android は Googleレンズの「テキストを選択」でコピー</span></li>
-      <li>下の欄に貼りつけて「読み取る」</li></ol>
+      <li><b>iPhone</b>：カメラを単語帳に向けて、画面の右下に出る［文字のマーク］を押す<span class="note">撮った写真でもOK：写真アプリで開いて、右下の［文字のマーク］</span><b>Android</b>：Googleレンズで写して「テキストを選択」</li>
+      <li>「すべてを選択」→「コピー」</li>
+      <li>下の欄に貼りつけて「読み取る」<span class="note">「英語　日本語」が横に並ぶ単語帳もそのまま読めます。何回か分けて貼りつけてもOK</span></li></ol>
     <div class="field"><label class="label" for="paste">コピーした文字</label>
       <textarea id="paste" rows="6" placeholder="ここに貼りつけ（スクショ数枚分をまとめて貼ってもOK）">${esc(draft)}</textarea></div>
     <button class="btn primary wide" data-act="parse">読み取る</button>
@@ -897,14 +926,14 @@ async function getWorker(langs){
 }
 function loadImg(file){return new Promise((ok,ng)=>{const u=URL.createObjectURL(file),im=new Image();im.onload=()=>{ok(im);setTimeout(()=>URL.revokeObjectURL(u),1000);};im.onerror=()=>ng(new Error("image"));im.src=u;});}
 const isRed=(r,g,b)=>r>120&&r-g>55&&r-b>35;
-async function prepImage(file){
+async function prepImage(file,removeRed){
   const im=await loadImg(file);
   const k=Math.min(1,2400/Math.max(im.naturalWidth,im.naturalHeight));
   const W=Math.round(im.naturalWidth*k),H=Math.round(im.naturalHeight*k);
   const cv=document.createElement("canvas");cv.width=W;cv.height=H;const cx=cv.getContext("2d",{willReadFrequently:true});
   cx.drawImage(im,0,0,W,H);const id=cx.getImageData(0,0,W,H),d=id.data,mask=new Uint8Array(W*H);
   for(let i=0,p=0;i<d.length;i+=4,p++){const r=d[i],g=d[i+1],b=d[i+2];
-    if(isRed(r,g,b)){mask[p]=1;d[i]=d[i+1]=d[i+2]=255;}
+    if(removeRed&&isRed(r,g,b)){mask[p]=1;d[i]=d[i+1]=d[i+2]=255;} // 赤線モードだけ赤ペンを消す（単語帳のピンクの見出しを消さない）
     else{const y=Math.round(.299*r+.587*g+.114*b);d[i]=d[i+1]=d[i+2]=y;}}
   cx.putImageData(id,0,0);return{cv,mask,W,H};
 }
@@ -963,7 +992,7 @@ async function runOCR(files,mode){
     const items=[];let texts=[];const seen=new Set(S.words.map(w=>norm(w.w)));const got=new Set();
     for(let i=0;i<files.length;i++){
       ocrStep=files.length>1?`${i+1}/${files.length}枚目を`:"";setOcr(`${ocrStep}読み取り中…`);
-      const img=await prepImage(files[i]);
+      const img=await prepImage(files[i],mode==="red");
       const {data}=await worker.recognize(img.cv);
       if(mode==="red"){
         for(const it of redItems(img,data)){
