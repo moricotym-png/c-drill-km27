@@ -805,16 +805,24 @@ function parseRows(lines){
     .split(" ").map(t=>t.length>1&&/^[A-Za-z]+$/.test(t)?t.toLowerCase():t).join(" ");
   const cleanJ=j=>cleanJa(j).replace(/\s+/g," ").trim();
   const split=line=>{const j=line.search(JA);if(j<=0)return null;let en=line.slice(0,j).replace(/[_|]+/g," "),ja=line.slice(j);
+    // 表の形「単語 [発音] [#2] 意味」：[ ] の中の発音を取り出し、番号やしるしは捨てる
+    let ipa="";en=en.replace(/\[([^\]]*)\]?/g,(m0,x)=>{if(!ipa&&!/^#|^\d/.test(x)&&x.length>1)ipa=x.trim();return " ";}).replace(/^\s*[\d.()]+\s*/,"");
+    ja=ja.replace(/\s+\d+\s*$/,"");
     if(!LAT.test(en))return null;
     // 「A から離れる」のように、意味が A/B などの記号＋助詞で始まるときは記号を意味の側へ
     const mm=en.match(/^(.*\S)\s+([A-Z]|[〜～~])\s*$/);if(mm&&/^(を|に|が|から|と|で|へ|の|より|として)/.test(ja)){en=mm[1];ja=mm[2]+" "+ja;}
-    en=cleanEn(en);return en.length>=2?{w:en,ja:cleanJ(ja),ex:""}:null;};
+    en=cleanEn(en);if(/to remember/i.test(en))return null;return en.length>=2?{w:en,ja:cleanJ(ja),ex:"",ipa}:null;};
+  // 表の何行分かが1行につながったときは、「意味」のあとに「単語 [」が来るところで行を分ける
+  lines=lines.flatMap(l=>l.replace(/([぀-ヿ㐀-鿿）)])[\s\d.]*(?=[A-Za-z][A-Za-z'\- ]{0,30}\s*\[)/g,"$1\n").split("\n")).map(s=>s.trim()).filter(Boolean);
   const rows=lines.map(split);const hit=rows.filter(Boolean).length;
   if(hit>=2&&hit>=lines.filter(l=>LAT.test(l)).length*0.4){
     // 横並びの表：日本語が読めなかった行も英語だけ残して、確認画面で意味を入れてもらう
-    return lines.map((l,i)=>rows[i]||(!JA.test(l)&&LAT.test(l)&&l.length<70&&!/[.?!]$/.test(l)?{w:cleanEn(l),ja:"",ex:""}:null)).filter(x=>x&&x.w);
+    return lines.map((l,i)=>rows[i]||(!JA.test(l)&&LAT.test(l)&&l.length<70&&!/[.?!]$/.test(l)&&!/to remember/i.test(l)?{w:cleanEn(l),ja:"",ex:""}:null)).filter(x=>x&&x.w);
   }
   // 英語の行が続いたあと、同じ数の日本語の行が続く形
+  // 列ごとに読み取られた表：見出し（単語・発音・意味）と [発音] だけの行は分けておく
+  const ipaLines=lines.filter(l=>/^\[[^\]]*\]?$/.test(l)).map(l=>l.replace(/[\[\]]/g,"").trim());
+  lines=lines.filter(l=>!/^\[[^\]]*\]?$/.test(l)&&!/^(G|No\.?|番号|単語|発音|意味|訳|日本語)$/i.test(l)&&!/to remember/i.test(l));
   const sentence=l=>/[.?!"”]$/.test(l)||l.split(" ").length>8;
   const kind=lines.map(l=>JA.test(l)?"J":LAT.test(l)?"E":"-");const out=[];let used=0;
   for(let i=0;i<lines.length;){
@@ -824,6 +832,7 @@ function parseRows(lines){
     if(ne===nj&&!lines.slice(i,a).some(sentence)){for(let k=0;k<ne;k++)out.push({w:cleanEn(lines[i+k]),ja:cleanJ(lines[a+k]),ex:""});used+=ne*2;i=b;}else i=a;
   }
   // 例文つきの単語帳（英単語・意味・例文の順）はこれまでの読み方に任せる
+  if(ipaLines.length===out.length)out.forEach((o,k)=>{o.ipa=ipaLines[k];});
   return out.length>=2&&used>=kind.filter(k=>k!=="-").length*0.8?out:null;
 }
 function parseText(txt){
