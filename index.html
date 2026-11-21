@@ -857,7 +857,7 @@ function tidyOcr(items){
     {const h=w.split(" / ");if(h.length===2&&/ [A-Z]$/.test(h[1])&&h[1].split(" ").length>h[0].split(" ").length)w=h[0]+" / "+h[1].replace(/ [A-Z]$/,"");}
     const ws=words(w).filter(t=>/[A-Za-z]/.test(t));const good=ws.filter(ok).length;
     const real=ws.filter(t=>ok(t)&&t.replace(/[^A-Za-z]/g,"").length>=3&&!/^(sb|sth)$/i.test(t)).length;
-    const shortish=ws.filter(t=>t.replace(/[^A-Za-z]/g,"").length<=2).length;
+    const shortish=ws.filter(t=>{const x=t.replace(/[^A-Za-z]/g,"");return x.length<=2&&!SHORT.has(x.toLowerCase())&&!/^[A-Z]$/.test(x);}).length;
     if(!ws.length||!real||good<Math.max(1,ws.length*0.6)||/to remember/i.test(w)||shortish>ws.length/2&&ws.length>3)return null; // 英語として読めない行・見出し
     if(!it.ja&&ws.length===1&&/^(unit|part|lesson|chapter|page|day|step|stage|level|section|review)$/i.test(w))return null;
     let ja=String(it.ja||"").replace(/\[[^\]]*\]?/g," ").replace(/(^|\s)(?!A(\s|$))[A-Za-z]{2,}(?=\s|$)/g," ") // 発音記号や品詞マークの読みまちがい
