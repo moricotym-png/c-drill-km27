@@ -344,7 +344,7 @@ const SEED=[
 ];
 
 const KEY="c-drill-v1";
-const APP_VER="2026-11-21f"; // 画面を変えたら上げる（設定の一番下に表示。新しい版があれば自動で読みこみ直す）
+const APP_VER="2026-11-21g"; // 画面を変えたら上げる（設定の一番下に表示。新しい版があれば自動で読みこみ直す）
 const DAYS=[0,1,3,7,14,30,60];
 const LV=["未学習","Lv.1","Lv.2","Lv.3","Lv.4","Lv.5","定着"];
 const TYPES={en2ja:"英語を見て意味を選ぶ",ja2en:"意味を見て英語を選ぶ",cloze:"例文の空欄に入る語を選ぶ",listen:"発音を聞いて意味を選ぶ",spell:"つづりを書く（Lv.2から）",para:"ふつうの英語からネイティブの表現を選ぶ"};
@@ -1105,20 +1105,21 @@ red:`These are photos of pages from an English text. The reader underlines words
    - note: one short Japanese line on nuance, common collocations, or a confusable word. Empty string if nothing useful.
    - set: empty string.
 3. Top-level "set": empty string.`,
-list:`These are photos of an English vocabulary book or word list (book pages or app screens). One of the photos may be the table of contents.
+list:`These are photos of an English vocabulary book, phrasal-verb book or word list (book pages or app screens). One of the photos may be the table of contents.
 
-1. Include EVERY English word or phrase in the list, in the order shown. Do not skip any. Do not include words that only appear in the table of contents.
+1. Include EVERY English word, phrase or phrasal verb on the pages, in reading order: left column top to bottom, then right column, then any tables at the bottom (e.g. "Words to Remember"). Do not skip any item, even short ones like "pass away" or "sit back". Ignore page headers, section titles and items that only appear in the table of contents.
 2. For each one, fill in:
-   - word: as printed.
+   - word: exactly as printed, keeping placeholders and alternatives (e.g. "put away A / put A away", "get away (from A)", "drive sb up the wall").
    - surface: same as word.
-   - reading: IPA pronunciation (American), without slashes.
-   - pos: part of speech in Japanese (名詞, 動詞, 形容詞, 副詞, 熟語 etc.).
-   - meaning_ja: the Japanese meaning printed in the list. If none is printed, a short common Japanese meaning.
+   - reading: the IPA printed in the book (without brackets or slashes); if none is printed, the American IPA.
+   - pos: part of speech in Japanese (名詞, 動詞, 形容詞, 副詞, 句動詞, 熟語 etc.).
+   - meaning_ja: the Japanese meaning printed in the book, copied exactly, including A/B placeholders, brackets and notes such as ［A: 感情］. Only if no meaning is printed, write a short common Japanese meaning.
    - meaning_en: a short, simple English definition.
    - sentence: the example sentence printed with it. If none is printed, write one short natural example sentence.
-   - note: empty string.
-   - set: the chapter / unit / section this word belongs to, as a short name. If a table of contents is included, use its headings and match each word by the page number or heading shown on its page (for example "Unit 3 環境・自然" or "第2章 動詞"). If there is no table of contents, use the heading shown on the page. Empty string if you cannot tell.
-3. Top-level "set": the name of the book or list if shown (for example "ターゲット1900" or "C12"), otherwise an empty string.`};
+   - note: short Japanese notes printed with it: the group heading it is under (e.g. 他動詞グループ / 自動詞グループ), and "マーカー" if it is underlined or highlighted by hand. Empty string if none.
+   - set: the unit and section it belongs to, as a short name (e.g. "Unit117 away", "Unit117 単語" for a Words to Remember table, "第2章 動詞"). If a table of contents is included, use its headings and page numbers.
+3. Top-level "set": the name of the book or list if shown, otherwise an empty string.
+4. Before writing the JSON, count the items on each page and check that every one is in your list.``};
 const AI_FORMAT=`
 
 At the end, output ONLY this JSON in a single \`\`\`json code block so I can import it into my vocabulary app (C単語ドリル). Do not rename the keys.
