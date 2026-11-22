@@ -379,7 +379,7 @@ const SEED=[
 ];
 
 const KEY="c-drill-v1";
-const APP_VER="2026-11-22e"; // 画面を変えたら上げる（設定の一番下に表示。新しい版があれば自動で読みこみ直す）
+const APP_VER="2026-11-22f"; // 画面を変えたら上げる（設定の一番下に表示。新しい版があれば自動で読みこみ直す）
 const DAYS=[0,1,3,7,14,30,60];
 const LV=["未学習","Lv.1","Lv.2","Lv.3","Lv.4","Lv.5","定着"];
 const TYPES={en2ja:"英語を見て意味を選ぶ",ja2en:"意味を見て英語を選ぶ",cloze:"例文の空欄に入る語を選ぶ",listen:"発音を聞いて意味を選ぶ",spell:"つづりを書く（Lv.2から）",para:"ふつうの英語からネイティブの表現を選ぶ"};
@@ -438,7 +438,7 @@ const TIERS=[
 const tierOf=r=>r<=0.7?0:r<0.8?1:r<0.9?2:r<1?3:4;
 const RANKS=[{n:0,t:"見習い",c:"--muted"},{n:20,t:"ブロンズ",c:"--bronze"},{n:60,t:"シルバー",c:"--silver"},{n:150,t:"ゴールド",c:"--gold"},{n:300,t:"プラチナ",c:"--plat"},{n:600,t:"マスター",c:"--primary"}];
 const rankOf=s=>{let r=0;RANKS.forEach((x,i)=>{if(s>=x.n)r=i;});return r;};
-const CATS={streak:"連続日数",correct:"累計正解",time:"学習時間",perfect:"満点",words:"覚えた単語"};
+const CATS={streak:"連続日数",correct:"累計正解",time:"学習時間",perfect:"満点",words:"覚えた単語",mastered:"定着した単語"};
 const TC={b:"bronze",s:"silver",g:"gold",p:"plat",m:"primary"};
 const MEDALS=[
   ["s3","streak",3,"b","3","3日連続"],["s7","streak",7,"s","7","7日連続"],["s14","streak",14,"g","14","14日連続"],["s30","streak",30,"p","30","30日連続"],["s100","streak",100,"p","100","100日連続"],
@@ -449,24 +449,48 @@ const MEDALS=[
 ].map(([id,cat,n,t,inner,label])=>({id,cat,n,t,inner,label}));
 // 最初の25個のあとも、上限なしで次のメダルが続く
 const MORE={streak:{list:[150,200,300,365,500,730,1000],step:500},correct:{list:[5000,10000,20000,30000,50000],step:25000},
-  time:{list:[3000,6000,12000,18000,30000],step:12000},perfect:{list:[150,200,300,500],step:250},words:{list:[1500,2000,3000,4000,5000],step:1000}};
-const PFX={streak:"s",correct:"c",time:"t",perfect:"p",words:"w"};
+  time:{list:[3000,6000,12000,18000,30000],step:12000},perfect:{list:[150,200,300,500],step:250},words:{list:[1500,2000,3000,4000,5000],step:1000},
+  mastered:{list:[10,30,50,100,200,300,500,1000,1500,2000,3000],step:1000}};
+const PFX={streak:"s",correct:"c",time:"t",perfect:"p",words:"w",mastered:"m"};
 const kfmt=n=>n>=1000?(n%1000?(n/1000).toFixed(1):n/1000)+"K":String(n);
 function mkMedal(cat,n,i){
   const h=Math.round(n/60);
-  const inner=cat==="time"?h+"h":cat==="correct"||cat==="words"?kfmt(n):String(n);
-  const label=cat==="streak"?n+"日連続":cat==="correct"?"正解"+n+"語":cat==="time"?h+"時間":cat==="perfect"?"満点"+n+"回":n+"語";
+  const inner=cat==="time"?h+"h":cat==="correct"||cat==="words"||cat==="mastered"?kfmt(n):String(n);
+  const label=cat==="streak"?n+"日連続":cat==="correct"?"正解"+n+"語":cat==="time"?h+"時間":cat==="perfect"?"満点"+n+"回":cat==="mastered"?"定着"+n+"語":n+"語";
   return{id:PFX[cat]+n,cat,n,t:["g","p","m"][i%3],inner,label};
 }
 function medalsFor(cat,upTo){ // 取れたメダルぜんぶ＋次の1個
-  const out=MEDALS.filter(m=>m.cat===cat);if(out[out.length-1].n>upTo)return out;
+  const out=MEDALS.filter(m=>m.cat===cat);if(out.length&&out[out.length-1].n>upTo)return out;
   const mo=MORE[cat],nth=i=>i<mo.list.length?mo.list[i]:mo.list[mo.list.length-1]+mo.step*(i-mo.list.length+1);
   for(let i=0;;i++){const m=mkMedal(cat,nth(i),i);out.push(m);if(m.n>upTo)return out;}
 }
-function medalValues(){return{streak:Math.max(streak(),S.stats.bestStreak||0),correct:S.stats.correct,time:Math.floor(S.stats.timeMs/60000),perfect:S.stats.perfect,words:S.words.filter(w=>w.stage>0).length};}
+function medalValues(){return{streak:Math.max(streak(),S.stats.bestStreak||0),correct:S.stats.correct,time:Math.floor(S.stats.timeMs/60000),perfect:S.stats.perfect,words:S.words.filter(w=>w.stage>0).length,mastered:S.words.filter(w=>w.stage>=6).length};}
 function checkMedals(){
   const v=medalValues();S.stats.bestStreak=v.streak;
-  return Object.keys(CATS).flatMap(c=>medalsFor(c,v[c])).filter(m=>!S.stats.medals[m.id]&&v[m.cat]>=m.n).map(m=>{S.stats.medals[m.id]=today();return m;});
+  const got=Object.keys(CATS).flatMap(c=>medalsFor(c,v[c])).filter(m=>!S.stats.medals[m.id]&&v[m.cat]>=m.n).map(m=>{S.stats.medals[m.id]=today();return m;});
+  try{if(typeof courseBooks==="function")courseBooks().forEach(b=>{const bm=bookMedals(b);if(bm)bm.list.filter(m=>!S.stats.medals[m.id]&&bm.v[m.cat]>=m.n).forEach(m=>{S.stats.medals[m.id]=today();got.push(m);});});}catch(e){}
+  return got;
+}
+// テキスト（単語帳）ごとのメダル：達成率・完了したUnit・読んだ解説・満点テスト
+const BOOK_CATS={pct:"達成率",units:"完了したUnit",read:"読んだ解説",perfect:"満点テスト"};
+function bookMedals(book){
+  const units=courseUnits(book);if(units.length<2)return null;
+  const items=units.flatMap(u=>[...u.words,...u.gram]),total=items.length;if(!total)return null;
+  const learned=items.filter(x=>x.stage>0).length,lessons=units.flatMap(u=>u.lessons||[]);
+  const tests=units.map(u=>(S.tests||{})[testKey(book,u.unit)]||[]);
+  const v={pct:Math.floor(learned/total*100),units:tests.filter(t=>t.some(x=>x.s>=80)).length,read:lessons.filter(l=>l.read).length,perfect:tests.filter(t=>t.some(x=>x.s>=100)).length};
+  const steps=(arr,max)=>[...new Set(arr.filter(n=>n<max).concat(max>0?[max]:[]))];
+  const defs={pct:[10,25,50,75,90,100],units:steps([1,3,5,10,20,30,50,75,100],units.length),read:lessons.length?steps([1,5,10,25,50,100],lessons.length):[],perfect:steps([1,3,5,10,20,30,50],units.length)};
+  const list=[];Object.entries(defs).forEach(([cat,ns])=>ns.forEach((n,i)=>{const all=(cat==="units"||cat==="perfect")&&n===units.length||cat==="read"&&n===lessons.length;
+    list.push({id:`bk:${book}:${cat}:${n}`,cat,n,book,t:["b","s","g","p","m"][Math.min(4,Math.floor(i*5/ns.length))],
+      inner:cat==="pct"?n+"%":String(n),label:cat==="pct"?`達成率${n}%`:cat==="units"?(all?"全Unit完了":`${n}Unit完了`):cat==="read"?(all?"解説ぜんぶ":`解説${n}`):(all?"全Unit満点":`満点${n}回`)});}));
+  return{v,list,total,learned};
+}
+function bookMedalsHTML(book){
+  const bm=bookMedals(book);if(!bm)return"";const got=bm.list.filter(m=>S.stats.medals[m.id]).length;
+  return`<section><h2>メダル <span class="note">${got}/${bm.list.length}・達成率 ${bm.v.pct}%</span></h2>${Object.entries(BOOK_CATS).map(([cat,c])=>{const ms=bm.list.filter(m=>m.cat===cat);if(!ms.length)return"";
+    let end=ms.findIndex(m=>!S.stats.medals[m.id]);if(end<0)end=ms.length-1;const to=Math.max(5,end+1),show=ms.slice(Math.max(0,to-5),to);
+    return`<div class="mrow"><p class="mlabel">${c}<span class="note">　${cat==="pct"?bm.v.pct+"%":bm.v[cat]}</span></p><div class="medals">${show.map(m=>medalHTML(m)).join("")}</div></div>`;}).join("")}</section>`;
 }
 function tick(){if(!Q)return;const now=Date.now(),dt=Math.min(Math.max(0,now-(Q.lastT||now)),90000);S.stats.timeMs+=dt;Q.act=(Q.act||0)+dt;Q.lastT=now;
   if(dt){const d=S.days[today()]||(S.days[today()]={n:0,c:0});d.t=(d.t||0)+dt;}}
@@ -670,18 +694,20 @@ function gCheck(){
 function gFinish(){G.done=true;gTick();
   if(G.mode==="test"){const ids=Object.keys(G.res),first=ids.filter(id=>!G.res[id].wrong).length;G.score=Math.round(first/Math.max(1,G.total)*100);
     S.tests=S.tests||{};const k=testKey(G.book,G.unit);(S.tests[k]=S.tests[k]||[]).push({d:today(),s:G.score,n:G.total});}
-  checkMedals();save();}
+  G.newMedals=checkMedals();save();}
 function renderGram(){
   if(G.done&&G.mode==="test"){const miss=Object.keys(G.res).filter(id=>G.res[id].wrong).map(id=>G.pool.get(id)||gAll().find(x=>x.id===id)).filter(Boolean);
     const sc=G.score,msg=sc>=80?"合格！このUnitは「完了」になりました。":sc>=70?"あと少し。まちがえたところを練習して、もう一度テストしよう。":"このUnitは「苦手」です。単語と文法を練習してから、もう一度テストしよう。";
     return`<article class="card sum"><p class="kicker">${esc(G.unit)}・理解度テスト</p><p class="score ${sc>=80?"ok-t":sc<70?"ng-t":""}">${sc}<small>点</small></p>
       <p class="note">${G.total}問中 ${G.total-miss.length}問正解</p><p>${msg}</p>
+      ${G.newMedals&&G.newMedals.length?`<div class="newmedals"><h2>メダル獲得！</h2><div class="medals">${G.newMedals.map(m=>medalHTML(m,true)).join("")}</div></div>`:""}
       ${miss.length?`<h2>まちがえた問題</h2><ul class="miss">${miss.map(x=>`<li><span>${esc(x.exp||gAns(x))}</span></li>`).join("")}</ul><p class="note">まちがえた単語は、明日の復習に出ます。</p>`:""}</article>
       <button class="btn primary wide" data-act="g-course">テキストへ戻る</button>`;}
   if(G.done){const ids=Object.keys(G.res),first=ids.filter(id=>!G.res[id].wrong).length;
     return`<article class="card sum"><p class="kicker">文法クイズ${G.set?"・"+esc(G.set):""}</p>
       <div class="stats"><div class="stat"><span>1回目で正解</span><b>${first}<small>/${ids.length}</small></b></div><div class="stat"><span>正答率</span><b>${ids.length?Math.round(first/ids.length*100):0}<small>%</small></b></div></div>
-      <p>${first<ids.length?"まちがえた問題は、明日の復習にもう一度出ます。":"全問正解！次の復習まで間隔がのびました。"}</p></article>
+      <p>${first<ids.length?"まちがえた問題は、明日の復習にもう一度出ます。":"全問正解！次の復習まで間隔がのびました。"}</p>
+      ${G.newMedals&&G.newMedals.length?`<div class="newmedals"><h2>メダル獲得！</h2><div class="medals">${G.newMedals.map(m=>medalHTML(m,true)).join("")}</div></div>`:""}</article>
       <button class="btn primary wide" data-act="g-home">ホームへ</button>`;}
   const g=G.cur,total=G.items.length,pct=Math.round(G.i/total*100);
   const head=`<div class="qhead"><button class="ghost" data-act="g-quit">やめる</button><div class="prog"><i style="width:${pct}%"></i></div><span class="count">${Math.min(G.i+1,total)}/${total}</span>${F?`<span class="flowleft">⏱${Math.max(0,Math.ceil((F.end-Date.now())/60000))}分</span>`:""}</div>`;
@@ -786,6 +812,7 @@ function renderCourse(){
           ${u.words.length?`<button class="btn" data-act="c-words" data-u="${esc(u.unit)}">単語を練習</button>`:""}
           ${u.gram.length?`<button class="btn" data-act="c-gram" data-u="${esc(u.unit)}">文法を練習</button>`:""}</div>
         ${(()=>{const rel=unitRelated(courseBook,u);return rel.length?`<div class="urel"><p class="label">ほかの単語帳の似た単語</p>${rel.map(x=>`<p><button class="kw" data-act="kw" data-id="${x.r.id}">${esc(x.r.w)}</button> ${esc(String(x.r.ja).slice(0,22))}<span class="note">　← ${esc(x.from.w)}・${esc(bookOf(x.r.set))}</span></p>`).join("")}</div>`:"";})()}</div>`:""}</div>`;}).join("")}</div></section>
+  ${bookMedalsHTML(courseBook)}
   <div id="pop" class="kwpop" hidden></div>`;
 }
 // 理解度テスト：単語（意味→英語・英語→意味）と文法をまぜて最大20問。点数を記録し、まちがえた単語は翌日の復習へ
@@ -1656,7 +1683,7 @@ document.addEventListener("click",e=>{
   if(a==="pop-close"){const p=document.getElementById("pop");if(p)p.hidden=true;return;}
   if(a==="c-lessons"){const u=courseUnits(courseBook).find(x=>x.unit===b.dataset.u);if(u)openLessons(u.lessons.map(l=>l.id));return;}
   if(a==="l-prev"){L.i=Math.max(0,L.i-1);render();window.scrollTo(0,0);return;}
-  if(a==="l-next"){const l=lAll().find(x=>x.id===L.ids[L.i]);if(l&&!l.read){l.read=today();save();}
+  if(a==="l-next"){const l=lAll().find(x=>x.id===L.ids[L.i]);if(l&&!l.read){l.read=today();const nm=checkMedals();save();if(nm.length)toast("メダル獲得！ "+nm.map(m=>m.label).join("・"));}
     if(L.i>=L.ids.length-1||flowTimeUp()){L=null;if(F){flowNext();return;}view="course";render();window.scrollTo(0,0);return;}
     L.i++;render();window.scrollTo(0,0);return;}
   if(a==="l-close"){F=null;L=null;view="course";render();window.scrollTo(0,0);return;}
