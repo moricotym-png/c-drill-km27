@@ -91,6 +91,7 @@ mark{background:linear-gradient(transparent 58%,var(--hl) 58%);color:inherit;pad
 .play svg{width:38px;height:38px}
 .opts{display:flex;flex-direction:column;gap:8px}
 .opt{width:100%;text-align:left;background:var(--card);border:1.5px solid var(--line);border-radius:12px;padding:13px 16px;font-size:16px;font-weight:700;min-height:52px}
+.olet{opacity:.6;margin-right:.45em;font-weight:600}
 .opt.en{font-family:var(--f-word);font-weight:600;font-size:18px}
 .opt.is-ok{border-color:var(--ok);background:var(--ok-bg);color:var(--ok)}
 .opt.is-ng{border-color:var(--ng);background:var(--ng-bg);color:var(--ng)}
@@ -379,7 +380,7 @@ const SEED=[
 ];
 
 const KEY="c-drill-v1";
-const APP_VER="2026-11-22f"; // 画面を変えたら上げる（設定の一番下に表示。新しい版があれば自動で読みこみ直す）
+const APP_VER="2026-11-22g"; // 画面を変えたら上げる（設定の一番下に表示。新しい版があれば自動で読みこみ直す）
 const DAYS=[0,1,3,7,14,30,60];
 const LV=["未学習","Lv.1","Lv.2","Lv.3","Lv.4","Lv.5","定着"];
 const TYPES={en2ja:"英語を見て意味を選ぶ",ja2en:"意味を見て英語を選ぶ",cloze:"例文の空欄に入る語を選ぶ",listen:"発音を聞いて意味を選ぶ",spell:"つづりを書く（Lv.2から）",para:"ふつうの英語からネイティブの表現を選ぶ"};
@@ -669,7 +670,7 @@ function gPrep(){
   const id=G.items[G.i];if(!id){gFinish();return;}
   const g=(G.pool&&G.pool.get(id))||gAll().find(x=>x.id===id);if(!g){G.i++;return gPrep();}
   G.cur=g;G.answered=false;G.ok=false;G.pick=null;G.typed="";
-  if(g.type==="mc")G.order=shuffle((g.choices||[]).map((c,k)=>k));
+  if(g.type==="mc"){const ix=(g.choices||[]).map((c,k)=>k);G.fixed=/[（(]\s*[a-d]\s*[)）]/.test(g.exp||"");G.order=G.fixed?ix:shuffle(ix);} // 解説が (a)(b)… で書いてあれば本の順のまま
   if(g.type==="order"){G.tiles=shuffle(gAns(g).split(/\s+/).filter(Boolean).map(t=>({t})));G.built=[];}
 }
 function gTick(){if(!G)return;const now=Date.now(),dt=Math.min(Math.max(0,now-(G.lastT||now)),90000);G.lastT=now;S.stats.timeMs+=dt;
@@ -714,7 +715,7 @@ function renderGram(){
   const kick=g.type==="mc"?"正しいものを選ぼう":g.type==="input"?"答えを書こう":"正しい順に並べよう";
   let body="";
   if(g.type==="mc")body=`<div class="opts">${G.order.map(k=>{let c="opt";if(G.answered){if(k===g.answer)c+=" is-ok";else if(k===G.pick)c+=" is-ng";else c+=" dim";}
-    return`<button class="${c}" data-act="g-pick" data-k="${k}" ${G.answered?"disabled":""}>${esc(g.choices[k])}</button>`;}).join("")}</div>`;
+    return`<button class="${c}" data-act="g-pick" data-k="${k}" ${G.answered?"disabled":""}>${G.fixed?`<span class="olet">(${"abcd"[k]})</span>`:""}${esc(g.choices[k])}</button>`;}).join("")}</div>`;
   if(g.type==="input")body=`<input class="spell" id="g-in" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" value="${esc(G.typed)}" ${G.answered?"disabled":""} aria-label="答え">
     ${G.answered?"":`<button class="btn primary wide" data-act="g-check">答え合わせ</button>`}`;
   if(g.type==="order")body=`<div class="tiles built">${G.built.map((x,i)=>`<button class="tile" data-act="g-unt" data-i="${i}" ${G.answered?"disabled":""}>${esc(x.t)}</button>`).join("")||'<span class="note">下の語を、正しい順にタップしよう</span>'}</div>
