@@ -172,6 +172,16 @@ textarea{resize:vertical;font-size:14px}
 .empty{color:var(--muted);text-align:center;padding:30px 0}
 
 .seg{display:flex;gap:6px;flex-wrap:wrap}
+.flow-g{display:grid;grid-template-columns:auto 1fr;gap:8px 10px;align-items:center}.flow-g .label{margin:0}
+.flowleft{font-size:12px;font-weight:800;color:var(--primary);white-space:nowrap}
+.lesson{padding:20px 18px;display:flex;flex-direction:column;gap:10px}.lesson h1{font-size:22px;margin:0}
+.lbody{display:flex;flex-direction:column;gap:10px;font-size:16px;line-height:1.8}.lbody p,.lbody ul,.lbody h3{margin:0}.lbody h3{font-size:17px;border-left:4px solid var(--primary);padding-left:8px}
+.points{background:var(--ok-bg);border-radius:12px;padding:12px 14px}.points h3{margin:0 0 6px;font-size:15px;color:var(--ok)}.points ul{margin:0;padding-left:1.2em;line-height:1.7}
+.kw{border:0;background:none;padding:0;font:inherit;color:var(--primary);font-weight:700;text-decoration:underline dotted;text-underline-offset:3px}
+.kwpop{position:fixed;left:12px;right:12px;bottom:84px;z-index:40;background:var(--card);border:1.5px solid var(--primary);border-radius:16px;padding:14px;box-shadow:0 10px 30px rgba(0,0,0,.18);display:flex;flex-direction:column;gap:6px}
+.kwpop[hidden]{display:none}
+.urel{border-top:1px dashed var(--line);padding-top:8px;display:flex;flex-direction:column;gap:4px;font-size:14px}.urel p{margin:0}
+.grow{flex:1}
 .ok-t{color:var(--ok)}.ng-t{color:var(--ng)}
 .plan .bar,.panel .bar{display:block}
 #c-book{margin:4px 0 0}#c-deadline{width:auto;flex:1}
@@ -369,7 +379,7 @@ const SEED=[
 ];
 
 const KEY="c-drill-v1";
-const APP_VER="2026-11-22c"; // 画面を変えたら上げる（設定の一番下に表示。新しい版があれば自動で読みこみ直す）
+const APP_VER="2026-11-22e"; // 画面を変えたら上げる（設定の一番下に表示。新しい版があれば自動で読みこみ直す）
 const DAYS=[0,1,3,7,14,30,60];
 const LV=["未学習","Lv.1","Lv.2","Lv.3","Lv.4","Lv.5","定着"];
 const TYPES={en2ja:"英語を見て意味を選ぶ",ja2en:"意味を見て英語を選ぶ",cloze:"例文の空欄に入る語を選ぶ",listen:"発音を聞いて意味を選ぶ",spell:"つづりを書く（Lv.2から）",para:"ふつうの英語からネイティブの表現を選ぶ"};
@@ -414,7 +424,7 @@ function restoreQ(){try{
 const newStats=()=>({correct:0,timeMs:0,sessions:0,perfect:0,stars:0,bestCombo:0,bestStreak:0,medals:{},best:{}});
 function normalize(){
   S.settings=Object.assign({perDay:10,soonMin:60,slowSec:10},S.settings||{});
-  if(!S.settings.slow10){if(S.settings.slowSec===5)S.settings.slowSec=10;S.settings.slow10=true;} // 5秒の初期値を10秒に変更S.settings.types=Object.assign(defTypes(),S.settings.types||{});S.days=S.days||{};S.grammar=S.grammar||[];S.tests=S.tests||{};
+  if(!S.settings.slow10){if(S.settings.slowSec===5)S.settings.slowSec=10;S.settings.slow10=true;} // 5秒の初期値を10秒に変更S.settings.types=Object.assign(defTypes(),S.settings.types||{});S.days=S.days||{};S.grammar=S.grammar||[];S.tests=S.tests||{};S.lessons=S.lessons||[];
   if(!S.stats){S.stats=newStats();S.stats.correct=Object.values(S.days).reduce((a,d)=>a+(d.c||0),0);}
   else{S.stats=Object.assign(newStats(),S.stats);S.stats.medals=S.stats.medals||{};}
   checkMedals();
@@ -535,7 +545,8 @@ function cloze(w){
 let IPA=null;
 function ipaOf(w){
   if(w.ipa)return w.ipa;if(!IPA)return"";
-  const ps=String(w.w).toLowerCase().replace(/[’]/g,"'").replace(/[^a-z' \-]/g,"").split(/[\s\-]+/).filter(Boolean);
+  const base=String(w.w).split(" / ")[0].replace(/\([^)]*\)/g," ").replace(/\b(A|B)\b/g," ").replace(/\b(sb|sth)\b/g,m=>m==="sb"?"somebody":"something"); // 熟語は前半の形で、A・(from A)などは読まない
+  const ps=base.toLowerCase().replace(/[’]/g,"'").replace(/[^a-z' \-]/g,"").split(/[\s\-]+/).filter(Boolean);
   const r=ps.map(x=>IPA[x]||IPA[x.replace(/'s$/,"")]||"");
   return r.length&&r.every(Boolean)?r.join(" "):"";
 }
@@ -549,9 +560,9 @@ function toast(msg){const t=document.getElementById("toast");t.textContent=msg;t
 
 function render(){
   const app=document.getElementById("app");
-  document.getElementById("tabs").hidden=!!(Q||G);
+  document.getElementById("tabs").hidden=!!(Q||G||L);
   document.querySelectorAll("#tabs button").forEach(b=>b.classList.toggle("on",b.dataset.v===view));
-  app.innerHTML=Q?renderQuiz():G?renderGram():view==="home"?renderHome():view==="add"?renderAdd():view==="list"?renderList():view==="course"?renderCourse():renderSettings();
+  app.innerHTML=Q?renderQuiz():G?renderGram():L?renderLesson():view==="home"?renderHome():view==="add"?renderAdd():view==="list"?renderList():view==="course"?renderCourse():renderSettings();
   app.querySelectorAll("[data-mixed]").forEach(c=>{c.indeterminate=true;});
 }
 
@@ -573,6 +584,7 @@ function renderHome(){
       <button class="btn" data-act="start-new" ${nl?"":"disabled"}>${newTxt}</button></div>
     ${soonRowHTML()}
   </section>
+  ${flowHomeHTML()}
   ${planHomeHTML()}
   ${gHomeHTML()}
   <section><h2>これからの復習</h2>
@@ -624,8 +636,8 @@ function gHomeHTML(){
     <details><summary class="note">Unitを選んで解く（${ss.length}）</summary><div class="sets">${ss.map(([n,gs])=>{const done=gs.filter(g=>g.stage>0).length;
       return`<button class="set" data-act="g-set" data-set="${esc(n)}"><span class="set-name">${esc(n)}</span><span class="bar"><i style="width:${Math.round(done/gs.length*100)}%"></i></span><span class="set-num">${done}/${gs.length} 問</span></button>`;}).join("")}</div></details></section>`;
 }
-function gStart(mode,set){
-  let list=mode==="review"?shuffle(gDue()):mode==="new"?gNew().slice(0,10):mode==="unit"?gAll().filter(g=>bookOf(g.set)===courseBook&&unitOf(g.set)===set):gAll().filter(g=>g.set===set);
+function gStart(mode,set,given){
+  let list=given?given:mode==="review"?shuffle(gDue()):mode==="new"?gNew().slice(0,10):mode==="unit"?gAll().filter(g=>bookOf(g.set)===courseBook&&unitOf(g.set)===set):gAll().filter(g=>g.set===set);
   if(!list.length)return;
   G={mode,set:mode==="set"||mode==="unit"?set:"",items:list.map(g=>g.id),i:0,res:{},done:false,lastT:Date.now()};gPrep();render();window.scrollTo(0,0);
 }
@@ -672,7 +684,7 @@ function renderGram(){
       <p>${first<ids.length?"まちがえた問題は、明日の復習にもう一度出ます。":"全問正解！次の復習まで間隔がのびました。"}</p></article>
       <button class="btn primary wide" data-act="g-home">ホームへ</button>`;}
   const g=G.cur,total=G.items.length,pct=Math.round(G.i/total*100);
-  const head=`<div class="qhead"><button class="ghost" data-act="g-quit">やめる</button><div class="prog"><i style="width:${pct}%"></i></div><span class="count">${Math.min(G.i+1,total)}/${total}</span></div>`;
+  const head=`<div class="qhead"><button class="ghost" data-act="g-quit">やめる</button><div class="prog"><i style="width:${pct}%"></i></div><span class="count">${Math.min(G.i+1,total)}/${total}</span>${F?`<span class="flowleft">⏱${Math.max(0,Math.ceil((F.end-Date.now())/60000))}分</span>`:""}</div>`;
   const kick=g.type==="mc"?"正しいものを選ぼう":g.type==="input"?"答えを書こう":"正しい順に並べよう";
   let body="";
   if(g.type==="mc")body=`<div class="opts">${G.order.map(k=>{let c="opt";if(G.answered){if(k===g.answer)c+=" is-ok";else if(k===G.pick)c+=" is-ng";else c+=" dim";}
@@ -697,10 +709,11 @@ function unitOf(set){const book=bookOf(set);let rest=String(set||"").slice(book.
   const m=rest.match(UNIT_RE);if(m)return m[3]?`第${m[3]}${m[4]}`:m[1][0].toUpperCase()+m[1].slice(1).toLowerCase()+m[2];
   return rest.split(/\s+/)[0]||"そのほか";}
 const unitNum=u=>{const m=String(u).match(/\d+/);return m?Number(m[0]):1e9;};
-function courseBooks(){const m=new Map();S.words.forEach(w=>{const b=bookOf(w.set);m.set(b,(m.get(b)||0)+1);});gAll().forEach(g=>{const b=bookOf(g.set);m.set(b,(m.get(b)||0)+1);});
+function courseBooks(){const m=new Map();S.words.forEach(w=>{const b=bookOf(w.set);m.set(b,(m.get(b)||0)+1);});gAll().forEach(g=>{const b=bookOf(g.set);m.set(b,(m.get(b)||0)+1);});lAll().forEach(l=>{const b=bookOf(l.set);m.set(b,(m.get(b)||0)+1);});
   return[...m.entries()].sort((a,b)=>b[1]-a[1]).map(([b])=>b);}
 function courseUnits(book){
-  const m=new Map(),get=u=>{if(!m.has(u))m.set(u,{unit:u,words:[],gram:[]});return m.get(u);};
+  const m=new Map(),get=u=>{if(!m.has(u))m.set(u,{unit:u,words:[],gram:[],lessons:[]});return m.get(u);};
+  lAll().forEach(l=>{if(bookOf(l.set)===book)get(unitOf(l.set)).lessons.push(l);});
   S.words.forEach(w=>{if(bookOf(w.set)===book)get(unitOf(w.set)).words.push(w);});
   gAll().forEach(g=>{if(bookOf(g.set)===book)get(unitOf(g.set)).gram.push(g);});
   return[...m.values()].sort((a,b)=>unitNum(a.unit)-unitNum(b.unit)||a.unit.localeCompare(b.unit,"ja",{numeric:true}));
@@ -714,12 +727,15 @@ function unitStats(book,u){
   const tests=(S.tests||{})[testKey(book,u.unit)]||[];const last=tests[tests.length-1],best=tests.reduce((a,t)=>Math.max(a,t.s),0);
   const done=best>=80;
   const weak=(last&&last.s<70)||(acc!==null&&ok+ng>=5&&acc<70);
-  const status=done&&!weak?"完了":weak?"苦手":learned?"学習中":"未着手";
-  return{n,learned,pct:n?Math.round(learned/n*100):0,acc,last,best,done,weak,status,tests};
+  const read=(u.lessons||[]).filter(l=>l.read).length;
+  const status=done&&!weak?"完了":weak?"苦手":learned||read?"学習中":"未着手";
+  return{read,n,learned,pct:n?Math.round(learned/n*100):0,acc,last,best,done,weak,status,tests};
 }
 function planInfo(){
   const p=S.plan;if(!p||!p.book||!p.deadline)return null;
-  const units=courseUnits(p.book);if(!units.length)return null;
+  let units=courseUnits(p.book);
+  if(p.from&&p.to){const a=units.findIndex(u=>u.unit===p.from),b=units.findIndex(u=>u.unit===p.to);if(a>=0&&b>=0)units=units.slice(Math.min(a,b),Math.max(a,b)+1);}
+  if(!units.length)return null;
   const st=units.map(u=>({u,s:unitStats(p.book,u)}));
   const total=units.length,done=st.filter(x=>x.s.done).length,left=total-done;
   const t=today(),daysLeft=Math.max(1,Math.round((new Date(p.deadline)-new Date(t))/864e5)+1);
@@ -734,7 +750,7 @@ const fmtPace=v=>v>=1?`1日あたり ${Math.round(v*10)/10}Unit`:`約${Math.floo
 function planHomeHTML(){
   const pi=planInfo();if(!pi)return"";
   const ahead=pi.diff>0?`<b class="ok-t">予定より${pi.diff}Unit先行</b>`:pi.diff<0?`<b class="ng-t">予定より${-pi.diff}Unit遅れ</b>`:"予定どおり";
-  return`<section class="card hero plan"><div class="hero-row"><div><p class="label">${esc(pi.p.book)}（${md(pi.p.deadline)}まで・あと${pi.daysLeft}日）</p>
+  return`<section class="card hero plan"><div class="hero-row"><div><p class="label">${esc(pi.p.book)}${pi.p.from&&pi.p.to?` ${esc(pi.p.from)}〜${esc(pi.p.to)}`:""}（${md(pi.p.deadline)}まで・あと${pi.daysLeft}日）</p>
     <p class="mid">${pi.done}<small>/${pi.total} Unit 完了</small></p></div><button class="btn primary" data-act="tab" data-v="course">テキストへ</button></div>
     <span class="bar"><i style="width:${Math.round(pi.done/pi.total*100)}%"></i></span>
     <p class="note">${ahead}。${fmtPace(pi.perDay)}のペース（今週の目標 ${pi.perWeek}Unit）。次は ${pi.next.map(x=>esc(x.u.unit)).join("・")}</p></section>`;
@@ -755,6 +771,7 @@ function renderCourse(){
       <p>${pi.diff>0?`<b class="ok-t">予定より${pi.diff}Unit進んでいます</b>`:pi.diff<0?`<b class="ng-t">予定より${-pi.diff}Unit遅れています</b>`:"予定どおりです"}。残り${pi.left}Unitを、<b>${fmtPace(pi.perDay)}</b>のペース（今週の目標 ${pi.perWeek}Unit）で進めると間に合います。</p>
       <p class="note">新しく覚える単語は、このテキストから1日 約${pi.wordsPerDay}語を優先して出します。</p>`
     :`<p class="note">いつまでに終えたいかを決めると、1日・1週間の目安と、予定より進んでいるか遅れているかを出します。</p>`}
+    ${units.length>1?`<div class="row-btns"><label class="label">範囲</label><select id="c-from" aria-label="範囲の始め">${units.map(u=>`<option ${(pl&&pl.from?pl.from===u.unit:u===units[0])?"selected":""}>${esc(u.unit)}</option>`).join("")}</select><span>〜</span><select id="c-to" aria-label="範囲の終わり">${units.map(u=>`<option ${(pl&&pl.to?pl.to===u.unit:u===units[units.length-1])?"selected":""}>${esc(u.unit)}</option>`).join("")}</select></div>`:""}
     <div class="row-btns"><input type="date" id="c-deadline" value="${pl?pl.deadline:""}" min="${today()}" aria-label="終える日"><button class="btn primary" data-act="c-plan">${pl?"日にちを変える":"この日までに終える"}</button>${pl?`<button class="btn" data-act="c-unplan">計画をやめる</button>`:""}</div>
   </section>
   ${weak.length?`<section class="card panel weak"><h2>苦手なUnit</h2>${weak.map(x=>`<div class="wk"><b>${esc(x.u.unit)}</b><span class="note">${x.s.last?`テスト ${x.s.last.s}点`:""}${x.s.acc!==null?`・正答率 ${x.s.acc}%`:""}</span><button class="btn" data-act="c-test" data-u="${esc(x.u.unit)}">再テスト</button></div>`).join("")}</section>`:""}
@@ -762,11 +779,14 @@ function renderCourse(){
     <div class="units">${st.map(({u,s})=>{const open=courseOpen===u.unit;return`<div class="unit ${s.status==="苦手"?"is-weak":s.status==="完了"?"is-done":""}">
       <button class="unit-h" data-act="c-open" data-u="${esc(u.unit)}" aria-expanded="${open}"><span class="unit-name">${esc(u.unit)}</span><span class="chip st-${s.status}">${s.status}</span>
         <span class="bar"><i style="width:${s.pct}%"></i></span><span class="unit-num">${s.learned}/${s.n}${s.best?`・最高${s.best}点`:""}</span></button>
-      ${open?`<div class="unit-d"><p class="note">単語 ${u.words.length}・文法 ${u.gram.length}　学習ずみ ${s.pct}%　正答率 ${s.acc===null?"—":s.acc+"%"}</p>
+      ${open?`<div class="unit-d"><p class="note">単語 ${u.words.length}・文法 ${u.gram.length}${u.lessons.length?`・解説 ${s.read}/${u.lessons.length} 読んだ`:""}　学習ずみ ${s.pct}%　正答率 ${s.acc===null?"—":s.acc+"%"}</p>
         ${s.tests.length?`<p class="note">テストの記録：${s.tests.slice(-5).map(t=>`${md(t.d)} ${t.s}点`).join("・")}</p>`:""}
+        ${u.lessons.length?`<button class="btn wide" data-act="c-lessons" data-u="${esc(u.unit)}">📖 解説を読む（${u.lessons.length}）</button>`:""}
         <div class="row-btns"><button class="btn primary" data-act="c-test" data-u="${esc(u.unit)}">理解度テスト</button>
           ${u.words.length?`<button class="btn" data-act="c-words" data-u="${esc(u.unit)}">単語を練習</button>`:""}
-          ${u.gram.length?`<button class="btn" data-act="c-gram" data-u="${esc(u.unit)}">文法を練習</button>`:""}</div></div>`:""}</div>`;}).join("")}</div></section>`;
+          ${u.gram.length?`<button class="btn" data-act="c-gram" data-u="${esc(u.unit)}">文法を練習</button>`:""}</div>
+        ${(()=>{const rel=unitRelated(courseBook,u);return rel.length?`<div class="urel"><p class="label">ほかの単語帳の似た単語</p>${rel.map(x=>`<p><button class="kw" data-act="kw" data-id="${x.r.id}">${esc(x.r.w)}</button> ${esc(String(x.r.ja).slice(0,22))}<span class="note">　← ${esc(x.from.w)}・${esc(bookOf(x.r.set))}</span></p>`).join("")}</div>`:"";})()}</div>`:""}</div>`;}).join("")}</div></section>
+  <div id="pop" class="kwpop" hidden></div>`;
 }
 // 理解度テスト：単語（意味→英語・英語→意味）と文法をまぜて最大20問。点数を記録し、まちがえた単語は翌日の復習へ
 function courseTest(unit){
@@ -781,10 +801,119 @@ function courseTest(unit){
 }
 function courseUnitWords(unit){const u=courseUnits(courseBook).find(x=>x.unit===unit);return u?u.words:[];}
 
+/* ---------- 解説（テストではなく、読んで学ぶ） ---------- */
+// S.lessons: [{id,set,title,body,points,order,read}]  body は空行で段落、「・」で箇条書き、「# 」で見出し、**太字**
+const lAll=()=>S.lessons||[];
+function mergeLessons(list,top){
+  S.lessons=lAll();const idx=new Map(S.lessons.map(l=>[l.set+"|"+l.title,l]));let add=0,upd=0;
+  list.forEach((x,k)=>{const set=x.set?(top?top+" "+x.set:x.set):(top||"解説");const key=set+"|"+x.title;const o=idx.get(key);
+    if(o){Object.assign(o,{body:x.body,points:x.points,order:x.order||k});upd++;}
+    else{const l={id:uid(),set,title:x.title,body:x.body,points:x.points,order:x.order||k,read:null};S.lessons.push(l);idx.set(key,l);add++;}});
+  save();return{add,upd};
+}
+let L=null,kwMap=null,kwKey="";
+function kwIndex(){ // 解説の中で色を付ける単語（アプリに入っている単語・熟語）
+  if(kwMap&&kwKey===String(S.words.length))return kwMap;kwMap=new Map();kwKey=String(S.words.length);
+  S.words.forEach(w=>{const base=String(w.w).split(" / ")[0].replace(/\([^)]*\)/g," ").replace(/\b(A|B|sb|sth|one's|oneself)\b/g," ").replace(/\s+/g," ").trim().toLowerCase();
+    if(/^[a-z'\- ]+$/.test(base)&&(base.includes(" ")||base.length>=4)&&!kwMap.has(base))kwMap.set(base,w.id);});
+  return kwMap;
+}
+function linkify(text){
+  const map=kwIndex(),re=/[A-Za-z][A-Za-z'\-]*/g,toks=[];let m;while((m=re.exec(text)))toks.push({s:m.index,e:m.index+m[0].length,t:m[0]});
+  let out="",pos=0;
+  for(let i=0;i<toks.length;i++){let hit=null;
+    for(let n=Math.min(4,toks.length-i);n>=1&&!hit;n--){const a=toks[i],b=toks[i+n-1],seg=text.slice(a.s,b.e);if(!/^[A-Za-z'\-]+( [A-Za-z'\-]+)*$/.test(seg))continue;
+      const low=seg.toLowerCase();let id=map.get(low);
+      if(!id&&n===1){for(const c of [low.replace(/ies$/,"y"),low.replace(/(es|s)$/,""),low.replace(/ed$/,""),low.replace(/d$/,""),low.replace(/ing$/,""),low.replace(/ing$/,"e")])if(c!==low&&map.get(c)){id=map.get(c);break;}}
+      if(id)hit={n,id,seg,s:a.s,e:b.e};}
+    if(hit){out+=esc(text.slice(pos,hit.s))+`<button class="kw" data-act="kw" data-id="${hit.id}">${esc(hit.seg)}</button>`;pos=hit.e;i+=hit.n-1;}
+  }
+  return out+esc(text.slice(pos));
+}
+const fmtInline=x=>linkify(x).replace(/\*\*(.+?)\*\*/g,"<b>$1</b>");
+function lessonBody(t){
+  return String(t||"").split(/\n\s*\n/).map(par=>{const lines=par.split("\n").filter(x=>x.trim());if(!lines.length)return"";
+    if(/^#{1,3}\s/.test(lines[0]))return`<h3>${fmtInline(lines[0].replace(/^#+\s*/,""))}</h3>`+(lines.length>1?`<p>${lines.slice(1).map(fmtInline).join("<br>")}</p>`:"");
+    if(lines.every(x=>/^\s*[・\-•●■◆]/.test(x)))return`<ul>${lines.map(x=>`<li>${fmtInline(x.replace(/^\s*[・\-•●■◆]\s*/,""))}</li>`).join("")}</ul>`;
+    return`<p>${lines.map(fmtInline).join("<br>")}</p>`;}).join("");
+}
+function openLessons(ids,start){ids=ids.filter(id=>lAll().some(l=>l.id===id));if(!ids.length)return false;L={ids,i:start||0};render();window.scrollTo(0,0);return true;}
+function renderLesson(){
+  const l=lAll().find(x=>x.id===L.ids[L.i]);if(!l){L=null;return renderHome();}
+  const last=L.i>=L.ids.length-1;
+  return`<div class="qhead"><button class="ghost" data-act="l-close">とじる</button>${flowBar()}<span class="count">${L.i+1}/${L.ids.length}</span></div>
+  <article class="card lesson"><p class="kicker">${esc(l.set)}・解説${l.read?"・読んだ":""}</p><h1>${esc(l.title)}</h1>
+    <div class="lbody">${lessonBody(l.body)}</div>
+    ${l.points&&l.points.length?`<div class="points"><h3>ポイント</h3><ul>${l.points.map(p=>`<li>${fmtInline(p)}</li>`).join("")}</ul></div>`:""}
+    <p class="note">色のついた単語を押すと、意味と似た意味の単語が出ます。</p></article>
+  <div class="row-btns">${L.i?`<button class="btn" data-act="l-prev">前へ</button>`:""}<button class="btn primary grow" data-act="l-next">${last?"読んだ・おわる":"読んだ・次へ"}</button></div>
+  <div id="pop" class="kwpop" hidden></div>`;
+}
+function kwPop(id,btn){const w=byId(id),p=document.getElementById("pop");if(!w||!p)return;const rs=relatedOf(w,4);
+  p.innerHTML=`<p class="fb-word">${esc(w.w)}<span>${esc(w.ja)}</span></p>${ipaHTML(w)}${w.ex?`<p class="ex">${hlEx(w)}</p>`:""}
+    ${rs.length?`<p class="rel"><span>似た意味</span>${rs.map(x=>`<b>${esc(x.w)}</b> ${esc(String(x.ja).slice(0,20))}`).join("　")}</p>`:""}
+    <p class="note">${esc(w.set)}</p><div class="row-btns"><button class="say" data-act="say" data-t="${esc(w.w)}">${SPK}発音</button><button class="btn" data-act="pop-close">とじる</button></div>`;
+  p.hidden=false;}
+// ほかの単語帳にある、似た意味の単語（Unitを開いたときに表示）
+function unitRelated(book,u,n=8){const out=new Map();
+  u.words.forEach(w=>relatedOf(w,3).forEach(r=>{if(bookOf(r.set)!==book&&!out.has(r.id)&&out.size<n)out.set(r.id,{r,from:w});}));
+  return[...out.values()];}
+
+/* ---------- 今日の勉強（時間・やること・範囲を選んで、アプリが順番に出す） ---------- */
+let F=null;
+const FLOW_MODES=[["auto","おまかせ"],["review","復習"],["new","新しく覚える"],["lesson","解説を読む"],["gram","文法"],["test","テスト"]];
+function flowRangeOpts(){const books=courseBooks();return books;}
+function flowHomeHTML(){
+  const st=S.settings.flow||{min:15,mode:"auto",book:"all",unit:"all"};const books=courseBooks();
+  const units=st.book!=="all"&&books.includes(st.book)?courseUnits(st.book):[];
+  return`<section class="card panel flow"><h2>今日の勉強</h2>
+    <div class="flow-g"><label class="label" for="f-min">時間</label><select id="f-min">${[5,10,15,20,30,45,60].map(n=>`<option value="${n}" ${st.min===n?"selected":""}>${n}分</option>`).join("")}</select>
+    <label class="label" for="f-mode">やること</label><select id="f-mode">${FLOW_MODES.map(([k,l])=>`<option value="${k}" ${st.mode===k?"selected":""}>${l}</option>`).join("")}</select>
+    <label class="label" for="f-book">範囲</label><select id="f-book"><option value="all">ぜんぶの単語帳</option>${books.map(b=>`<option ${st.book===b?"selected":""}>${esc(b)}</option>`).join("")}</select>
+    ${units.length?`<label class="label" for="f-unit">Unit</label><select id="f-unit"><option value="all">ぜんぶ</option><option value="next" ${st.unit==="next"?"selected":""}>次のUnit</option><option value="weak" ${st.unit==="weak"?"selected":""}>苦手なUnit</option>${units.map(u=>`<option ${st.unit===u.unit?"selected":""}>${esc(u.unit)}</option>`).join("")}</select>`:""}</div>
+    <button class="btn primary wide" data-act="f-start">はじめる</button>
+    <p class="note">おまかせ：復習 → 文法の復習 → 次のUnitの解説 → 新しい単語 → 文法 → テスト の順に、時間までやります。</p></section>`;
+}
+function flowUnitsSet(st){ // 範囲に入るUnit（"本|Unit"）。null＝しぼらない
+  if(st.book==="all")return null;const units=courseUnits(st.book);const s=x=>new Set(x.map(u=>st.book+"|"+u.unit));
+  if(st.unit==="all"||!units.length)return null;
+  if(st.unit==="next"){const u=units.find(u=>!unitStats(st.book,u).done);return s(u?[u]:[]);}
+  if(st.unit==="weak")return s(units.filter(u=>unitStats(st.book,u).weak));
+  return s(units.filter(u=>u.unit===st.unit));
+}
+function flowIn(set,st,us){if(st.book!=="all"&&bookOf(set)!==st.book)return false;return!us||us.has(bookOf(set)+"|"+unitOf(set));}
+function flowStart(){
+  const st=Object.assign({min:15,mode:"auto",book:"all",unit:"all"},S.settings.flow||{});
+  const us=flowUnitsSet(st),inR=x=>flowIn(x.set,st,us);
+  const sRev=()=>{const l=dueList().filter(inR);return l.length?(startSession("review",null,l),true):false;};
+  const sGRev=()=>{const l=gDue().filter(inR);return l.length?(gStart("list",null,shuffle(l)),true):false;};
+  const sLes=(max)=>()=>{const ids=lAll().filter(inR).sort((a,b)=>(a.read?1:0)-(b.read?1:0)||unitNum(unitOf(a.set))-unitNum(unitOf(b.set))||(a.order||0)-(b.order||0)).filter((l,k,arr)=>!max||!l.read).slice(0,max||999).map(l=>l.id);return openLessons(ids);};
+  const sNew=()=>{const l=newList().filter(inR).slice(0,Math.max(5,newLeft()));return l.length?(startSession("new",null,l),true):false;};
+  const sGram=()=>{const l=gAll().filter(inR).sort((a,b)=>(a.stage?1:0)-(b.stage?1:0)).slice(0,10);return l.length?(gStart("list",null,l),true):false;};
+  const sTest=()=>{const books=st.book==="all"?(S.plan?[S.plan.book]:courseBooks()):[st.book];
+    for(const b of books){const units=courseUnits(b).filter(u=>!us||us.has(b+"|"+u.unit));
+      const u=units.find(u=>{const s=unitStats(b,u);return!s.done&&(st.mode==="test"||s.pct>=50);})||(st.mode==="test"?units[0]:null);
+      if(u){courseBook=b;courseTest(u.unit);return true;}}return false;};
+  const steps={auto:[sRev,sGRev,sLes(2),sNew,sGram,sTest],review:[sRev,sGRev],new:[sNew],lesson:[sLes(0)],gram:[sGRev,sGram],test:[sTest]}[st.mode]||[sRev];
+  F={end:Date.now()+st.min*60000,start:Date.now(),min:st.min,steps,i:0,did:0};
+  if(!flowNext())toast("この範囲には、今やることがありません。範囲ややることを変えてみてください");
+}
+function flowTimeUp(){return F&&Date.now()>=F.end;}
+function flowBar(){if(!F)return'<div class="prog"><i style="width:0"></i></div>';const left=Math.max(0,Math.ceil((F.end-Date.now())/60000)),pct=Math.min(100,Math.round((Date.now()-F.start)/(F.end-F.start)*100));
+  return`<div class="prog flowprog" title="今日の勉強"><i style="width:${pct}%"></i></div><span class="flowleft">⏱${left}分</span>`;}
+function flowNext(){ // 次のやることを始める。なければ（または時間なら）おしまい
+  if(!F)return false;Q=null;G=null;L=null;
+  if(!flowTimeUp())while(F.i<F.steps.length){const fn=F.steps[F.i++];if(fn()){F.did++;return true;}}
+  const mins=Math.max(1,Math.round((Date.now()-F.start)/60000)),did=F.did;F=null;view="home";render();window.scrollTo(0,0);
+  if(did)toast(`おつかれさま！今日は${mins}分勉強しました`);return did>0;
+}
+
 /* ---------- quiz ---------- */
-function startSession(mode,set){
+function startSession(mode,set,list){
   let items=[];
-  if(mode==="review")items=shuffle(dueList()).map(w=>({id:w.id,phase:"quiz"}));
+  if(list&&mode==="review")items=shuffle(list.slice()).map(w=>({id:w.id,phase:"quiz"}));
+  else if(list&&mode==="new"){const ws=list;for(let i=0;i<ws.length;i+=5){const ch=ws.slice(i,i+5);ch.forEach(w=>items.push({id:w.id,phase:"intro"}));shuffle(ch).forEach(w=>items.push({id:w.id,phase:"quiz"}));}}
+  else if(mode==="review")items=shuffle(dueList()).map(w=>({id:w.id,phase:"quiz"}));
   else if(mode==="soon")items=shuffle(soonReady()).map(w=>({id:w.id,phase:"quiz"}));
   else if(mode==="new"){const ws=pickNew(newLeft());for(let i=0;i<ws.length;i+=5){const ch=ws.slice(i,i+5);ch.forEach(w=>items.push({id:w.id,phase:"intro"}));shuffle(ch).forEach(w=>items.push({id:w.id,phase:"quiz"}));}}
   else if(mode==="unit")items=shuffle(courseUnitWords(set)).map(w=>({id:w.id,phase:"quiz"}));
@@ -874,7 +1003,7 @@ function settle(ok){
   const nb=document.querySelector(".grades")||document.getElementById("nextbtn");
   if(nb)setTimeout(()=>nb.scrollIntoView({block:"end",behavior:"smooth"}),50);
 }
-function next(){tick();Q.i++;prepare();saveQ();render();window.scrollTo(0,0);speakCurrent();}
+function next(){tick();if(flowTimeUp()&&!Q.done){finish();saveQ();render();window.scrollTo(0,0);return;}Q.i++;prepare();saveQ();render();window.scrollTo(0,0);speakCurrent();}
 // 自分で決める3段階：◎完璧（もう出さない＝3ヶ月後に確認）・○OK（いつもの間隔）・▲うろ覚え（明日もう一度）
 function grade(g){
   const id=Q.cur.w.id,r=Q.res[id];if(!r)return next();
@@ -953,7 +1082,7 @@ function bestsHTML(){
 function renderQuiz(){
   if(Q.done)return renderSummary();
   const total=Q.items.length,pct=Math.round(Q.i/total*100),q=Q.cur,w=q.w;
-  const head=`<div class="qhead"><button class="ghost" data-act="quit">やめる</button><div class="prog"><i style="width:${pct}%"></i></div><span class="count">${Math.min(Q.i+1,total)}/${total}</span></div>`;
+  const head=`<div class="qhead"><button class="ghost" data-act="quit">やめる</button><div class="prog"><i style="width:${pct}%"></i></div><span class="count">${Math.min(Q.i+1,total)}/${total}</span>${F?`<span class="flowleft">⏱${Math.max(0,Math.ceil((F.end-Date.now())/60000))}分</span>`:""}</div>`;
   if(q.type==="intro")return head+`
     <article class="card qcard"><p class="kicker">新しい単語・${esc(w.set)}</p>
       <p class="word"><mark>${esc(w.w)}</mark></p>${ipaHTML(w)}
@@ -1363,7 +1492,8 @@ function parseAiReply(text){
     const ans=type==="mc"?Number(q.answer)||0:Array.isArray(q.answer)?q.answer.map(str):str(q.answer);
     return{type,q:str(q.question||q.q),choices:ch,answer:ans,exp:str(q.explanation||q.exp),src:str(q.source||q.src),set:str(q.set)};
   }).filter(g=>g.type==="mc"?g.choices.length>=2&&g.answer>=0&&g.answer<g.choices.length:!!gAns(g));
-  const seen=new Set();return{share:!!d.share,set:str(d.set),grammar,items:items.filter(it=>{const k=norm(it.w);if(seen.has(k))return false;seen.add(k);return true;})};
+  const lessons=(Array.isArray(d.lessons)?d.lessons:[]).filter(l=>l&&(l.title||l.body)).map((l,k)=>({set:str(l.set),title:str(l.title)||`解説${k+1}`,body:str(l.body),points:Array.isArray(l.points)?l.points.map(str).filter(Boolean):[],order:Number(l.order)||k}));
+  const seen=new Set();return{share:!!d.share,set:str(d.set),grammar,lessons,items:items.filter(it=>{const k=norm(it.w);if(seen.has(k))return false;seen.add(k);return true;})};
 }
 /* ---------- ほかのスマホに単語を送る（LINEなどで送るコード） ---------- */
 const SHARE_TAG="CDRILL1:";
@@ -1431,7 +1561,8 @@ function aiTake(text){
   let r;try{r=parseAiReply(text);}catch(e){toast("まとめの部分が見つかりませんでした。返事の最後のコード欄をコピーしてください");return;}
   let gmsg="";
   if(r.grammar&&r.grammar.length){const m=mergeGrammar(r.grammar,r.share?"":r.set);gmsg=`文法問題を${m.add}問追加${m.upd?`・${m.upd}問更新`:""}しました`;}
-  if(!r.items.length){if(gmsg){toast(gmsg+"（ホームの「文法クイズ」から解けます）");render();}else toast("取りこめる単語が見つかりませんでした");return;}
+  if(r.lessons&&r.lessons.length){const m=mergeLessons(r.lessons,r.share?"":r.set);gmsg+=(gmsg?"。":"")+`解説を${m.add}つ追加${m.upd?`・${m.upd}つ更新`:""}しました`;}
+  if(!r.items.length){if(gmsg){toast(gmsg+"（ホームの「文法クイズ」や「テキスト」から使えます）");render();}else toast("取りこめる単語が見つかりませんでした");return;}
   if(gmsg)setTimeout(()=>toast(gmsg),2800);
   const sn=((document.getElementById("setname")||{}).value||"").trim();
   const groups=new Set(r.items.map(it=>it.set).filter(Boolean)).size;
@@ -1520,12 +1651,23 @@ document.addEventListener("click",e=>{
   if(a==="pick"){if(Q.answered)return;Q.pick=b.dataset.id;return settle(Q.pick===Q.cur.w.id);}
   if(a==="check"){const v=document.getElementById("spell").value;Q.typed=v;return settle(norm(v)===norm(Q.cur.w.w));}
   if(a==="next")return next();
+  if(a==="f-start"){flowStart();return;}
+  if(a==="kw"){kwPop(b.dataset.id,b);return;}
+  if(a==="pop-close"){const p=document.getElementById("pop");if(p)p.hidden=true;return;}
+  if(a==="c-lessons"){const u=courseUnits(courseBook).find(x=>x.unit===b.dataset.u);if(u)openLessons(u.lessons.map(l=>l.id));return;}
+  if(a==="l-prev"){L.i=Math.max(0,L.i-1);render();window.scrollTo(0,0);return;}
+  if(a==="l-next"){const l=lAll().find(x=>x.id===L.ids[L.i]);if(l&&!l.read){l.read=today();save();}
+    if(L.i>=L.ids.length-1||flowTimeUp()){L=null;if(F){flowNext();return;}view="course";render();window.scrollTo(0,0);return;}
+    L.i++;render();window.scrollTo(0,0);return;}
+  if(a==="l-close"){F=null;L=null;view="course";render();window.scrollTo(0,0);return;}
   if(a==="c-open"){courseOpen=courseOpen===b.dataset.u?"":b.dataset.u;render();return;}
   if(a==="c-test")return courseTest(b.dataset.u);
   if(a==="c-words")return startSession("unit",b.dataset.u);
   if(a==="c-gram")return gStart("unit",b.dataset.u);
   if(a==="c-plan"){const d=document.getElementById("c-deadline").value;if(!d||d<today()){toast("終える日を選んでください");return;}
-    S.plan={book:courseBook,deadline:d,start:S.plan&&S.plan.book===courseBook?S.plan.start:today()};save();render();toast(`${md(d)}までに終える計画にしました`);return;}
+    const fr=document.getElementById("c-from"),to=document.getElementById("c-to");
+    S.plan={book:courseBook,deadline:d,start:S.plan&&S.plan.book===courseBook?S.plan.start:today(),from:fr?fr.value:"",to:to?to.value:""};save();render();
+    toast(`${S.plan.from&&S.plan.to?`${S.plan.from}〜${S.plan.to}を`:""}${md(d)}までに終える計画にしました`);return;}
   if(a==="c-unplan"){S.plan=null;save();render();return;}
   if(a==="g-review")return gStart("review");
   if(a==="g-new")return gStart("new");
@@ -1534,13 +1676,15 @@ document.addEventListener("click",e=>{
   if(a==="g-check"){if(!G.answered)gCheck();return;}
   if(a==="g-tile"){const x=G.tiles.splice(Number(b.dataset.i),1)[0];if(x)G.built.push(x);render();return;}
   if(a==="g-unt"){const x=G.built.splice(Number(b.dataset.i),1)[0];if(x)G.tiles.push(x);render();return;}
-  if(a==="g-next"){gTick();G.i++;gPrep();render();window.scrollTo(0,0);return;}
-  if(a==="g-course"){G=null;view="course";render();window.scrollTo(0,0);return;}
+  if(a==="g-next"){gTick();if(flowTimeUp()){gFinish();render();window.scrollTo(0,0);return;}G.i++;gPrep();render();window.scrollTo(0,0);return;}
+  if(a==="g-course"){if(F){flowNext();return;}G=null;view="course";render();window.scrollTo(0,0);return;}
+  if(a==="g-home"&&F){flowNext();return;}
+  if(a==="g-quit")F=null;
   if(a==="g-quit"||a==="g-home"){if(G&&!G.done){gTick();save();}G=null;view="home";render();window.scrollTo(0,0);return;}
   if(a==="grade")return grade(b.dataset.g);
   if(a==="known")return known();
-  if(a==="quit"){tick();applySRS();checkMedals();save();Q=null;view="home";render();if(true)toast("ここまでの結果を保存しました");return;}
-  if(a==="home"){Q=null;view="home";render();window.scrollTo(0,0);return;}
+  if(a==="quit"){F=null;tick();applySRS();checkMedals();save();Q=null;view="home";render();if(true)toast("ここまでの結果を保存しました");return;}
+  if(a==="home"){if(F){flowNext();return;}Q=null;view="home";render();window.scrollTo(0,0);return;}
   if(a==="parse"){
     draft=document.getElementById("paste").value;
     const p=parseText(draft);const sn=document.getElementById("setname").value.trim();
@@ -1556,7 +1700,9 @@ document.addEventListener("click",e=>{
     try{navigator.clipboard.readText().then(t=>t&&t.trim()?takeAny(t):toast("コピーされた内容がありません"),fb);}catch(e){fb();}return;}
   if(a==="ai-take"){takeAny(document.getElementById("ai-text").value);return;}
   if(a==="share-make"){const sel=new Set(shareSel),ws=shareWords(sel),gs=shareGrammar(sel);
-    const json=JSON.stringify({set:"",share:true,words:ws,grammar:gs,questions:[]});shareJson=json;
+    const uset=new Set([...sel].map(k=>{const n=k.replace(/^g:/,"");return bookOf(n)+"|"+unitOf(n);}));
+    const ls=lAll().filter(l=>uset.has(bookOf(l.set)+"|"+unitOf(l.set))).map(l=>({set:l.set,title:l.title,body:l.body,points:l.points,order:l.order}));
+    const json=JSON.stringify({set:"",share:true,words:ws,grammar:gs,lessons:ls,questions:[]});shareJson=json;
     packText(json).then(code=>{const names=[...sel];
       const nm=names.map(n=>n.replace(/^g:/,"文法："));
       shareMsg=`C単語ドリルの単語（${nm.length>2?nm.slice(0,2).join("、")+` ほか${nm.length-2}セット`:nm.join("、")}・${ws.length}語${gs.length?`・文法${gs.length}問`:""}）です。\nこのメッセージを長押しでコピーして、単語ドリルの「追加」→「② 貼りつけて取りこむ」を押してね。\n${code}`;
@@ -1627,6 +1773,9 @@ document.addEventListener("click",e=>{
 document.addEventListener("change",e=>{
   const t=e.target;
   if(t.id==="c-book"){courseBook=t.value;courseOpen="";render();return;}
+  if(["f-min","f-mode","f-book","f-unit"].includes(t.id)){const st=S.settings.flow=Object.assign({min:15,mode:"auto",book:"all",unit:"all"},S.settings.flow||{});
+    if(t.id==="f-min")st.min=Number(t.value);if(t.id==="f-mode")st.mode=t.value;if(t.id==="f-book"){st.book=t.value;st.unit="all";}if(t.id==="f-unit")st.unit=t.value;
+    save();if(t.id==="f-book")render();return;}
   if(t.dataset&&t.dataset.share!==undefined){if(t.checked)shareSel.add(t.dataset.share);else shareSel.delete(t.dataset.share);shareRefresh();return;}
   if(t.dataset&&t.dataset.sharebook!==undefined){document.querySelectorAll("[data-share]").forEach(k=>{if(k.dataset.sbook===t.dataset.sharebook){k.checked=t.checked;if(t.checked)shareSel.add(k.dataset.share);else shareSel.delete(k.dataset.share);}});shareRefresh();return;}
   if(t.dataset&&t.dataset.book!==undefined){S.settings.newOff=S.settings.newOff||{};if(t.checked)delete S.settings.newOff[t.dataset.book];else S.settings.newOff[t.dataset.book]=true;save();return;}
