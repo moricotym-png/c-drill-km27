@@ -92,6 +92,8 @@ mark{background:linear-gradient(transparent 58%,var(--hl) 58%);color:inherit;pad
 .opts{display:flex;flex-direction:column;gap:8px}
 .opt{width:100%;text-align:left;background:var(--card);border:1.5px solid var(--line);border-radius:12px;padding:13px 16px;font-size:16px;font-weight:700;min-height:52px}
 .olet{opacity:.6;margin-right:.45em;font-weight:600}
+.gknow{margin-top:10px;font-size:14px}.gknow.on{opacity:.75}
+.linkbtn{background:none;border:0;padding:0;color:inherit;text-decoration:underline;font-size:inherit}
 .opt.en{font-family:var(--f-word);font-weight:600;font-size:18px}
 .opt.is-ok{border-color:var(--ok);background:var(--ok-bg);color:var(--ok)}
 .opt.is-ng{border-color:var(--ng);background:var(--ng-bg);color:var(--ng)}
@@ -380,7 +382,7 @@ const SEED=[
 ];
 
 const KEY="c-drill-v1";
-const APP_VER="2026-11-22g"; // 画面を変えたら上げる（設定の一番下に表示。新しい版があれば自動で読みこみ直す）
+const APP_VER="2026-11-22h"; // 画面を変えたら上げる（設定の一番下に表示。新しい版があれば自動で読みこみ直す）
 const DAYS=[0,1,3,7,14,30,60];
 const LV=["未学習","Lv.1","Lv.2","Lv.3","Lv.4","Lv.5","定着"];
 const TYPES={en2ja:"英語を見て意味を選ぶ",ja2en:"意味を見て英語を選ぶ",cloze:"例文の空欄に入る語を選ぶ",listen:"発音を聞いて意味を選ぶ",spell:"つづりを書く（Lv.2から）",para:"ふつうの英語からネイティブの表現を選ぶ"};
@@ -639,7 +641,10 @@ function soonRowHTML(){
 // mc=4択（answerは正解の番号）、input=書いて答える（answerは正解の文字。いくつか正解があれば配列）、order=並べかえ（answerは正しい文）
 let G=null;
 const gAll=()=>S.grammar||[];
-const gDue=()=>gAll().filter(g=>g.stage>0&&g.due&&g.due<=today());
+const gDue=()=>gAll().filter(g=>!g.known&&g.stage>0&&g.due&&g.due<=today());
+// 分かっている問題：「もう出さない」にした問題と、正解して次の復習日がまだ先の問題。練習では出さない
+const gKnown=g=>!!g.known||(g.stage>0&&!!g.due&&g.due>today());
+const gPractice=list=>{const l=list.filter(g=>!gKnown(g));return[...shuffle(l.filter(g=>g.stage>0)),...l.filter(g=>!g.stage)];}; // 復習の日が来た問題 → まだやっていない問題
 const gNew=()=>gAll().filter(g=>!g.stage);
 function gSets(){const m=new Map();gAll().forEach(g=>{if(!m.has(g.set))m.set(g.set,[]);m.get(g.set).push(g);});return[...m.entries()].sort((a,b)=>a[0].localeCompare(b[0],"ja",{numeric:true}));}
 const gNorm=s=>String(s||"").toLowerCase().replace(/[’‘]/g,"'").replace(/[.,!?;:"“”。、！？]/g," ").replace(/\s+/g," ").trim();
@@ -663,6 +668,9 @@ function gHomeHTML(){
 }
 function gStart(mode,set,given){
   let list=given?given:mode==="review"?shuffle(gDue()):mode==="new"?gNew().slice(0,10):mode==="unit"?gAll().filter(g=>bookOf(g.set)===courseBook&&unitOf(g.set)===set):gAll().filter(g=>g.set===set);
+  if(!given&&(mode==="unit"||mode==="set")){const all=list;list=gPractice(all);
+    if(!list.length){if(!all.length)return;const nx=all.filter(g=>!g.known&&g.due).map(g=>g.due).sort()[0];
+      if(!confirm(`今やる問題はありません（分かっている問題と、復習の日を待っている問題だけです）。${nx?`次の復習は ${md(nx)} です。`:""}\nそれでもぜんぶ解きますか？`))return;list=shuffle(all.slice());}}
   if(!list.length)return;
   G={mode,set:mode==="set"||mode==="unit"?set:"",items:list.map(g=>g.id),i:0,res:{},done:false,lastT:Date.now()};gPrep();render();window.scrollTo(0,0);
 }
@@ -682,7 +690,7 @@ function gSettle(ok){
   if(g.wid){ // 理解度テストの単語問題：まちがえたら、その単語を翌日の復習へ
     if(!r.applied){r.applied=true;const w=byId(g.wid);if(w){if(ok)w.ok=(w.ok||0)+1;else{w.ng=(w.ng||0)+1;if(w.stage>0){w.stage=1;w.due=addDays(t,1);}}}}
   }else if(!r.applied){r.applied=true; // その回の最初の答えで復習の間隔を決める
-    if(ok){g.ok=(g.ok||0)+1;const prev=g.stage||0;g.stage=Math.min(prev+1,6);g.due=addDays(t,prev===6?90:DAYS[g.stage]);}
+    if(ok){g.ok=(g.ok||0)+1;const prev=g.stage||0;g.stage=prev===0?3:Math.min(prev+1,6);/* 初めてで正解＝分かっている：次は1週間後 */g.due=addDays(t,prev===6?90:DAYS[g.stage]);}
     else{g.ng=(g.ng||0)+1;g.stage=1;g.due=addDays(t,1);}}
   if(!ok&&!r.wrong){r.wrong=true;if(G.mode!=="test")G.items.push(g.id);} // まちがえた問題はこの回でもう1回（テストは1回だけ）
   save();render();const nb=document.getElementById("g-next");if(nb)setTimeout(()=>nb.scrollIntoView({block:"end",behavior:"smooth"}),50);
@@ -724,7 +732,8 @@ function renderGram(){
   const fb=G.answered?`<div class="fb ${G.ok?"ok":"ng"}"><p class="verdict">${G.ok?"正解！":"ざんねん"}</p>
       ${G.ok&&g.type==="mc"?"":`<p class="fb-ans">正解：<b>${esc(gAns(g))}</b></p>`}
       ${!G.ok&&g.type!=="mc"?`<p class="hint">あなたの答え：${esc(G.typed||"（空らん）")}</p>`:""}
-      ${g.exp?`<p class="gexp">${esc(g.exp)}</p>`:""}${!G.ok?`<p class="hint">このあともう一度出ます。</p>`:""}</div>
+      ${g.exp?`<p class="gexp">${esc(g.exp)}</p>`:""}${!G.ok?`<p class="hint">${G.mode==="test"?"明日の復習に出ます。":"このあともう一度出ます。"}</p>`:""}
+      ${G.ok&&!g.wid?`<button class="btn wide gknow ${g.known?"on":""}" data-act="g-known">${g.known?"✓ もう出しません（押すと元に戻す）":"分かっているので、もう出さない"}</button>`:""}</div>
     <button class="btn primary wide" data-act="g-next" id="g-next">${G.i>=G.items.length-1?"結果を見る":"次へ"}</button>`:"";
   return head+`<article class="card qcard gq"><p class="kicker">${esc(g.set)}・${kick}</p><p class="gq-text">${gFmt(g.q)}</p>${g.src?`<p class="note">${esc(g.src)}</p>`:""}</article>`+body+fb;
 }
@@ -811,7 +820,8 @@ function renderCourse(){
         ${u.lessons.length?`<button class="btn wide" data-act="c-lessons" data-u="${esc(u.unit)}">📖 解説を読む（${u.lessons.length}）</button>`:""}
         <div class="row-btns"><button class="btn primary" data-act="c-test" data-u="${esc(u.unit)}">理解度テスト</button>
           ${u.words.length?`<button class="btn" data-act="c-words" data-u="${esc(u.unit)}">単語を練習</button>`:""}
-          ${u.gram.length?`<button class="btn" data-act="c-gram" data-u="${esc(u.unit)}">文法を練習</button>`:""}</div>
+          ${u.gram.length?`<button class="btn" data-act="c-gram" data-u="${esc(u.unit)}">文法を練習（${gPractice(u.gram).length}問）</button>`:""}</div>
+        ${u.gram.length?`<p class="note">${(()=>{const sure=u.gram.filter(g=>g.known||(gKnown(g)&&g.stage>=2)).length,wait=u.gram.filter(gKnown).length-sure;return sure||wait?`文法 ${u.gram.length}問のうち、${sure?`分かっている問題 ${sure}問`:""}${sure&&wait?"・":""}${wait?`復習の日を待っている問題 ${wait}問`:""}は、今は練習に出しません。`:`文法 ${u.gram.length}問。正解した問題は、次の復習の日まで練習に出しません。`;})()}${u.gram.some(g=>g.known)?` <button class="linkbtn" data-act="c-unknown" data-u="${esc(u.unit)}">「もう出さない」${u.gram.filter(g=>g.known).length}問を元に戻す</button>`:""}</p>`:""}
         ${(()=>{const rel=unitRelated(courseBook,u);return rel.length?`<div class="urel"><p class="label">ほかの単語帳の似た単語</p>${rel.map(x=>`<p><button class="kw" data-act="kw" data-id="${x.r.id}">${esc(x.r.w)}</button> ${esc(String(x.r.ja).slice(0,22))}<span class="note">　← ${esc(x.from.w)}・${esc(bookOf(x.r.set))}</span></p>`).join("")}</div>`:"";})()}</div>`:""}</div>`;}).join("")}</div></section>
   ${bookMedalsHTML(courseBook)}
   <div id="pop" class="kwpop" hidden></div>`;
@@ -819,7 +829,7 @@ function renderCourse(){
 // 理解度テスト：単語（意味→英語・英語→意味）と文法をまぜて最大20問。点数を記録し、まちがえた単語は翌日の復習へ
 function courseTest(unit){
   const u=courseUnits(courseBook).find(x=>x.unit===unit);if(!u)return;
-  const gq=shuffle(u.gram.slice()).slice(0,Math.min(u.gram.length,u.words.length?8:20));
+  const gq=[...shuffle(u.gram.filter(g=>!gKnown(g))),...shuffle(u.gram.filter(gKnown))].slice(0,Math.min(u.gram.length,u.words.length?8:20));
   const wq=shuffle(u.words.slice()).slice(0,20-gq.length).map((w,k)=>{const toEn=k%2===0,key=toEn?"w":"ja";
     const opts=shuffle([w,...distract(w,key)]);
     return{id:"t:"+w.id,wid:w.id,set:w.set,type:"mc",q:toEn?`「${w.ja}」を英語で言うと？`:`${w.w} の意味は？`,choices:opts.map(x=>x[key]),answer:opts.indexOf(w),exp:`${w.w}　${w.ja}`};});
@@ -917,7 +927,7 @@ function flowStart(){
   const sGRev=()=>{const l=gDue().filter(inR);return l.length?(gStart("list",null,shuffle(l)),true):false;};
   const sLes=(max)=>()=>{const ids=lAll().filter(inR).sort((a,b)=>(a.read?1:0)-(b.read?1:0)||unitNum(unitOf(a.set))-unitNum(unitOf(b.set))||(a.order||0)-(b.order||0)).filter((l,k,arr)=>!max||!l.read).slice(0,max||999).map(l=>l.id);return openLessons(ids);};
   const sNew=()=>{const l=newList().filter(inR).slice(0,Math.max(5,newLeft()));return l.length?(startSession("new",null,l),true):false;};
-  const sGram=()=>{const l=gAll().filter(inR).sort((a,b)=>(a.stage?1:0)-(b.stage?1:0)).slice(0,10);return l.length?(gStart("list",null,l),true):false;};
+  const sGram=()=>{const l=gPractice(gAll().filter(inR)).slice(0,10);return l.length?(gStart("list",null,l),true):false;};
   const sTest=()=>{const books=st.book==="all"?(S.plan?[S.plan.book]:courseBooks()):[st.book];
     for(const b of books){const units=courseUnits(b).filter(u=>!us||us.has(b+"|"+u.unit));
       const u=units.find(u=>{const s=unitStats(b,u);return!s.done&&(st.mode==="test"||s.pct>=50);})||(st.mode==="test"?units[0]:null);
@@ -1700,6 +1710,8 @@ document.addEventListener("click",e=>{
   if(a==="g-review")return gStart("review");
   if(a==="g-new")return gStart("new");
   if(a==="g-set")return gStart("set",b.dataset.set);
+  if(a==="g-known"){const g=G&&G.cur;if(!g||g.wid)return;const real=gAll().find(x=>x.id===g.id)||g;real.known=!real.known;if(real!==g)g.known=real.known;save();render();toast(real.known?"この問題はもう出しません":"また出すようにしました");return;}
+  if(a==="c-unknown"){const u=courseUnits(courseBook).find(x=>x.unit===b.dataset.u);if(!u)return;const n=u.gram.filter(g=>g.known).length;if(!n||!confirm(`「もう出さない」にした${n}問を、また出すようにしますか？`))return;u.gram.forEach(g=>delete g.known);save();render();toast(`${n}問をまた出すようにしました`);return;}
   if(a==="g-pick"){if(G.answered)return;G.pick=Number(b.dataset.k);return gSettle(G.pick===G.cur.answer);}
   if(a==="g-check"){if(!G.answered)gCheck();return;}
   if(a==="g-tile"){const x=G.tiles.splice(Number(b.dataset.i),1)[0];if(x)G.built.push(x);render();return;}
