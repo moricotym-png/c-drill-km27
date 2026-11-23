@@ -99,6 +99,7 @@ mark{background:linear-gradient(transparent 58%,var(--hl) 58%);color:inherit;pad
 .revgrid select{font-size:14px;padding:6px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:inherit;width:100%}
 .langsw{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:4px 0 10px}.langsw button:not(.say){border:1px solid var(--line);background:var(--card);color:inherit;border-radius:999px;padding:5px 12px;font-size:13px}
 .langsw button.on{background:var(--ink,#2b2f8a);color:#fff;border-color:transparent}.enpar{color:var(--sub,#555);border-left:3px solid var(--line);padding-left:10px;margin:-4px 0 12px}.enpar h3{font-size:15px}
+.lis-script{font-family:var(--f-word,inherit);font-size:15px;line-height:1.6;background:var(--bg2,rgba(0,0,0,.03));border-radius:10px;padding:10px 12px;margin-top:8px}
 .opt.en{font-family:var(--f-word);font-weight:600;font-size:18px}
 .opt.is-ok{border-color:var(--ok);background:var(--ok-bg);color:var(--ok)}
 .opt.is-ng{border-color:var(--ng);background:var(--ng-bg);color:var(--ng)}
@@ -387,7 +388,7 @@ const SEED=[
 ];
 
 const KEY="c-drill-v1";
-const APP_VER="2026-11-23c"; // 画面を変えたら上げる（設定の一番下に表示。新しい版があれば自動で読みこみ直す）
+const APP_VER="2026-11-23d"; // 画面を変えたら上げる（設定の一番下に表示。新しい版があれば自動で読みこみ直す）
 const DAYS=[0,1,3,7,14,30,60];
 const LV=["未学習","Lv.1","Lv.2","Lv.3","Lv.4","Lv.5","定着"];
 const TYPES={en2ja:"英語を見て意味を選ぶ",ja2en:"意味を見て英語を選ぶ",cloze:"例文の空欄に入る語を選ぶ",listen:"発音を聞いて意味を選ぶ",spell:"つづりを書く（Lv.2から）",para:"ふつうの英語からネイティブの表現を選ぶ"};
@@ -705,10 +706,18 @@ function gStart(mode,set,given){
   if(!list.length)return;
   G={mode,set:mode==="set"||mode==="unit"?set:"",items:list.map(g=>g.id),i:0,res:{},done:false,lastT:Date.now()};gPrep();render();window.scrollTo(0,0);
 }
+/* ---------- リスニング問題（スクリプトを読み上げる。答えるまで文字は隠す） ---------- */
+const isLis=g=>/^【Part/.test(g.q||"");
+function lisParts(g){const t=String(g.q||""),m=t.match(/\n\s*Question:\s*([\s\S]*)$/i);return{script:(m?t.slice(0,m.index):t).replace(/^【[^】]*】\s*/,""),question:m?m[1].trim():"",tag:(t.match(/^【[^】]*】/)||[""])[0]};}
+function lisSay(g,withQ){const p=lisParts(g);let t=p.script.split("\n").map(x=>x.replace(/^\s*(☆|★)\s*:?\s*/,"").replace(/^\s*([A-Z][a-z]+|[A-Z])\s*:\s*/,"")).join(" ");if(withQ&&p.question)t+=" . Question: "+p.question;speak(t);}
+function lisHTML(g){if(!isLis(g))return"";const p=lisParts(g),show=G.answered||G.showScript;
+  return`<p class="gq-text">${esc(p.tag)} ${p.question?esc(p.question):""}</p>
+    <div class="row-btns"><button class="btn primary" data-act="lis-play">${SPK}聞く</button><button class="btn" data-act="lis-script">${show?"スクリプトを隠す":"スクリプトを見る"}</button></div>
+    ${show?`<p class="lis-script">${esc(p.script).replace(/\n/g,"<br>")}</p>`:`<p class="note">音声を聞いて答えよう（何回でも聞けます）</p>`}`;}
 function gPrep(){
   const id=G.items[G.i];if(!id){gFinish();return;}
   const g=(G.pool&&G.pool.get(id))||gAll().find(x=>x.id===id);if(!g){G.i++;return gPrep();}
-  G.cur=g;G.answered=false;G.ok=false;G.pick=null;G.typed="";
+  G.cur=g;G.answered=false;G.ok=false;G.pick=null;G.typed="";G.showScript=false;if(isLis(g))lisSay(g,true);
   if(g.type==="mc"){const ix=(g.choices||[]).map((c,k)=>k);G.fixed=/[（(]\s*[a-d]\s*[)）]/.test(g.exp||"");G.order=G.fixed?ix:shuffle(ix);} // 解説が (a)(b)… で書いてあれば本の順のまま
   if(g.type==="order"){G.tiles=shuffle(gAns(g).split(/\s+/).filter(Boolean).map(t=>({t})));G.built=[];}
 }
@@ -766,7 +775,7 @@ function renderGram(){
       ${g.exp?`<p class="gexp">${esc(g.exp)}</p>`:""}${!G.ok?`<p class="hint">${G.mode==="test"?"明日の復習に出ます。":"このあともう一度出ます。"}</p>`:""}
       ${G.ok&&!g.wid?`<button class="btn wide gknow ${g.known?"on":""}" data-act="g-known">${g.known?"✓ もう出しません（押すと元に戻す）":"分かっているので、もう出さない"}</button>`:""}</div>
     <button class="btn primary wide" data-act="g-next" id="g-next">${G.i>=G.items.length-1?"結果を見る":"次へ"}</button>`:"";
-  return head+`<article class="card qcard gq"><p class="kicker">${esc(g.set)}・${kick}</p><p class="gq-text">${gFmt(g.q)}</p>${g.src?`<p class="note">${esc(g.src)}</p>`:""}</article>`+body+fb;
+  return head+`<article class="card qcard gq"><p class="kicker">${esc(g.set)}・${kick}</p>${lisHTML(g)||`<p class="gq-text">${gFmt(g.q)}</p>`}${g.src?`<p class="note">${esc(g.src)}</p>`:""}</article>`+body+fb;
 }
 
 /* ---------- テキスト（Unitごとの進み具合・理解度テスト・ペース） ---------- */
@@ -1764,6 +1773,8 @@ document.addEventListener("click",e=>{
   if(a==="g-set")return gStart("set",b.dataset.set);
   if(a==="g-known"){const g=G&&G.cur;if(!g||g.wid)return;const real=gAll().find(x=>x.id===g.id)||g;real.known=!real.known;if(real!==g)g.known=real.known;save();render();toast(real.known?"この問題はもう出しません":"また出すようにしました");return;}
   if(a==="c-unknown"){const u=courseUnits(courseBook).find(x=>x.unit===b.dataset.u);if(!u)return;const n=u.gram.filter(g=>g.known).length;if(!n||!confirm(`「もう出さない」にした${n}問を、また出すようにしますか？`))return;u.gram.forEach(g=>delete g.known);save();render();toast(`${n}問をまた出すようにしました`);return;}
+  if(a==="lis-play"){if(G&&G.cur)lisSay(G.cur,true);return;}
+  if(a==="lis-script"){if(G){G.showScript=!G.showScript;render();}return;}
   if(a==="g-pick"){if(G.answered)return;G.pick=Number(b.dataset.k);return gSettle(G.pick===G.cur.answer);}
   if(a==="g-check"){if(!G.answered)gCheck();return;}
   if(a==="g-tile"){const x=G.tiles.splice(Number(b.dataset.i),1)[0];if(x)G.built.push(x);render();return;}
