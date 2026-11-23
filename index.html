@@ -97,6 +97,8 @@ mark{background:linear-gradient(transparent 58%,var(--hl) 58%);color:inherit;pad
 .revset{margin:4px 0 6px}.revset summary{cursor:pointer;list-style:revert}
 .revgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px 10px;margin:8px 0}.revgrid label{display:flex;flex-direction:column;font-size:12px;gap:3px;color:var(--sub,inherit)}
 .revgrid select{font-size:14px;padding:6px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:inherit;width:100%}
+.langsw{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:4px 0 10px}.langsw button:not(.say){border:1px solid var(--line);background:var(--card);color:inherit;border-radius:999px;padding:5px 12px;font-size:13px}
+.langsw button.on{background:var(--ink,#2b2f8a);color:#fff;border-color:transparent}.enpar{color:var(--sub,#555);border-left:3px solid var(--line);padding-left:10px;margin:-4px 0 12px}.enpar h3{font-size:15px}
 .opt.en{font-family:var(--f-word);font-weight:600;font-size:18px}
 .opt.is-ok{border-color:var(--ok);background:var(--ok-bg);color:var(--ok)}
 .opt.is-ng{border-color:var(--ng);background:var(--ng-bg);color:var(--ng)}
@@ -385,7 +387,7 @@ const SEED=[
 ];
 
 const KEY="c-drill-v1";
-const APP_VER="2026-11-23b"; // 画面を変えたら上げる（設定の一番下に表示。新しい版があれば自動で読みこみ直す）
+const APP_VER="2026-11-23c"; // 画面を変えたら上げる（設定の一番下に表示。新しい版があれば自動で読みこみ直す）
 const DAYS=[0,1,3,7,14,30,60];
 const LV=["未学習","Lv.1","Lv.2","Lv.3","Lv.4","Lv.5","定着"];
 const TYPES={en2ja:"英語を見て意味を選ぶ",ja2en:"意味を見て英語を選ぶ",cloze:"例文の空欄に入る語を選ぶ",listen:"発音を聞いて意味を選ぶ",spell:"つづりを書く（Lv.2から）",para:"ふつうの英語からネイティブの表現を選ぶ"};
@@ -874,8 +876,8 @@ const lAll=()=>S.lessons||[];
 function mergeLessons(list,top){
   S.lessons=lAll();const idx=new Map(S.lessons.map(l=>[l.set+"|"+l.title,l]));let add=0,upd=0;
   list.forEach((x,k)=>{const set=x.set?(top?top+" "+x.set:x.set):(top||"解説");const key=set+"|"+x.title;const o=idx.get(key);
-    if(o){Object.assign(o,{body:x.body,points:x.points,order:x.order||k});upd++;}
-    else{const l={id:uid(),set,title:x.title,body:x.body,points:x.points,order:x.order||k,read:null};S.lessons.push(l);idx.set(key,l);add++;}});
+    if(o){Object.assign(o,{body:x.body,en:x.en||"",points:x.points,order:x.order||k});upd++;}
+    else{const l={id:uid(),set,title:x.title,body:x.body,en:x.en||"",points:x.points,order:x.order||k,read:null};S.lessons.push(l);idx.set(key,l);add++;}});
   save();return{add,upd};
 }
 let L=null,kwMap=null,kwKey="";
@@ -905,12 +907,20 @@ function lessonBody(t){
     return`<p>${lines.map(fmtInline).join("<br>")}</p>`;}).join("");
 }
 function openLessons(ids,start){ids=ids.filter(id=>lAll().some(l=>l.id===id));if(!ids.length)return false;L={ids,i:start||0};render();window.scrollTo(0,0);return true;}
+const lessonLang=()=>S.settings.lang||"ja";
+const paras=t=>String(t||"").split(/\n\s*\n/).filter(x=>x.trim());
+function lessonPairs(l){ // 日本語・英語・両方（段落の数が同じなら、段落ごとに日本語→英語の順に並べる）
+  const m=l.en?lessonLang():"ja";if(m==="ja")return lessonBody(l.body);if(m==="en")return`<div lang="en">${lessonBody(l.en)}</div>`;
+  const a=paras(l.body),b=paras(l.en);
+  if(a.length===b.length)return a.map((x,i)=>lessonBody(x)+`<div class="enpar" lang="en">${lessonBody(b[i])}</div>`).join("");
+  return lessonBody(l.body)+`<h3 class="enhead">English</h3><div class="enpar" lang="en">${lessonBody(l.en)}</div>`;}
 function renderLesson(){
   const l=lAll().find(x=>x.id===L.ids[L.i]);if(!l){L=null;return renderHome();}
   const last=L.i>=L.ids.length-1;
   return`<div class="qhead"><button class="ghost" data-act="l-close">とじる</button>${flowBar()}<span class="count">${L.i+1}/${L.ids.length}</span></div>
   <article class="card lesson"><p class="kicker">${esc(l.set)}・解説${l.read?"・読んだ":""}</p><h1>${esc(l.title)}</h1>
-    <div class="lbody">${lessonBody(l.body)}</div>
+    ${l.en?`<div class="langsw" role="group" aria-label="表示する言葉">${[["ja","日本語"],["en","English"],["both","両方"]].map(([v,t])=>`<button class="${lessonLang()===v?"on":""}" data-act="l-lang" data-v="${v}">${t}</button>`).join("")}<button class="say" data-act="l-say">${SPK}英語を聞く</button></div>`:""}
+    <div class="lbody">${lessonPairs(l)}</div>
     ${l.points&&l.points.length?`<div class="points"><h3>ポイント</h3><ul>${l.points.map(p=>`<li>${fmtInline(p)}</li>`).join("")}</ul></div>`:""}
     <p class="note">色のついた単語を押すと、意味と似た意味の単語が出ます。</p></article>
   <div class="row-btns">${L.i?`<button class="btn" data-act="l-prev">前へ</button>`:""}<button class="btn primary grow" data-act="l-next">${last?"読んだ・おわる":"読んだ・次へ"}</button></div>
@@ -1565,7 +1575,7 @@ function parseAiReply(text){
     const ans=type==="mc"?Number(q.answer)||0:Array.isArray(q.answer)?q.answer.map(str):str(q.answer);
     return{type,q:str(q.question||q.q),choices:ch,answer:ans,exp:str(q.explanation||q.exp),src:str(q.source||q.src),set:str(q.set)};
   }).filter(g=>g.type==="mc"?g.choices.length>=2&&g.answer>=0&&g.answer<g.choices.length:!!gAns(g));
-  const lessons=(Array.isArray(d.lessons)?d.lessons:[]).filter(l=>l&&(l.title||l.body)).map((l,k)=>({set:str(l.set),title:str(l.title)||`解説${k+1}`,body:str(l.body),points:Array.isArray(l.points)?l.points.map(str).filter(Boolean):[],order:Number(l.order)||k}));
+  const lessons=(Array.isArray(d.lessons)?d.lessons:[]).filter(l=>l&&(l.title||l.body)).map((l,k)=>({set:str(l.set),title:str(l.title)||`解説${k+1}`,body:str(l.body),en:str(l.body_en||l.en),points:Array.isArray(l.points)?l.points.map(str).filter(Boolean):[],order:Number(l.order)||k}));
   const seen=new Set();return{share:!!d.share,set:str(d.set),grammar,lessons,items:items.filter(it=>{const k=norm(it.w);if(seen.has(k))return false;seen.add(k);return true;})};
 }
 /* ---------- ほかのスマホに単語を送る（LINEなどで送るコード） ---------- */
@@ -1733,6 +1743,8 @@ document.addEventListener("click",e=>{
   if(a==="kw"){kwPop(b.dataset.id,b);return;}
   if(a==="pop-close"){const p=document.getElementById("pop");if(p)p.hidden=true;return;}
   if(a==="c-lessons"){const u=courseUnits(courseBook).find(x=>x.unit===b.dataset.u);if(u)openLessons(u.lessons.map(l=>l.id));return;}
+  if(a==="l-lang"){S.settings.lang=b.dataset.v;save();render();return;}
+  if(a==="l-say"){const l=lAll().find(x=>x.id===L.ids[L.i]);if(l&&l.en)speak(l.en.replace(/^#+\s*/gm,"").replace(/^・/gm,"").replace(/\*\*/g,""));return;}
   if(a==="l-prev"){L.i=Math.max(0,L.i-1);render();window.scrollTo(0,0);return;}
   if(a==="l-next"){const l=lAll().find(x=>x.id===L.ids[L.i]);if(l&&!l.read){l.read=today();const nm=checkMedals();save();if(nm.length)toast("メダル獲得！ "+nm.map(m=>m.label).join("・"));}
     if(L.i>=L.ids.length-1||flowTimeUp()){L=null;if(F){flowNext();return;}view="course";render();window.scrollTo(0,0);return;}
@@ -1781,7 +1793,7 @@ document.addEventListener("click",e=>{
   if(a==="ai-take"){takeAny(document.getElementById("ai-text").value);return;}
   if(a==="share-make"){const sel=new Set(shareSel),ws=shareWords(sel),gs=shareGrammar(sel);
     const uset=new Set([...sel].map(k=>{const n=k.replace(/^g:/,"");return bookOf(n)+"|"+unitOf(n);}));
-    const ls=lAll().filter(l=>uset.has(bookOf(l.set)+"|"+unitOf(l.set))).map(l=>({set:l.set,title:l.title,body:l.body,points:l.points,order:l.order}));
+    const ls=lAll().filter(l=>uset.has(bookOf(l.set)+"|"+unitOf(l.set))).map(l=>({set:l.set,title:l.title,body:l.body,body_en:l.en||undefined,points:l.points,order:l.order}));
     const json=JSON.stringify({set:"",share:true,words:ws,grammar:gs,lessons:ls,questions:[]});shareJson=json;
     packText(json).then(code=>{const names=[...sel];
       const nm=names.map(n=>n.replace(/^g:/,"文法："));
