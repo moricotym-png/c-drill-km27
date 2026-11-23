@@ -94,6 +94,9 @@ mark{background:linear-gradient(transparent 58%,var(--hl) 58%);color:inherit;pad
 .olet{opacity:.6;margin-right:.45em;font-weight:600}
 .gknow{margin-top:10px;font-size:14px}.gknow.on{opacity:.75}
 .linkbtn{background:none;border:0;padding:0;color:inherit;text-decoration:underline;font-size:inherit}
+.revset{margin:4px 0 6px}.revset summary{cursor:pointer;list-style:revert}
+.revgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px 10px;margin:8px 0}.revgrid label{display:flex;flex-direction:column;font-size:12px;gap:3px;color:var(--sub,inherit)}
+.revgrid select{font-size:14px;padding:6px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:inherit;width:100%}
 .opt.en{font-family:var(--f-word);font-weight:600;font-size:18px}
 .opt.is-ok{border-color:var(--ok);background:var(--ok-bg);color:var(--ok)}
 .opt.is-ng{border-color:var(--ng);background:var(--ng-bg);color:var(--ng)}
@@ -382,7 +385,7 @@ const SEED=[
 ];
 
 const KEY="c-drill-v1";
-const APP_VER="2026-11-23a"; // 画面を変えたら上げる（設定の一番下に表示。新しい版があれば自動で読みこみ直す）
+const APP_VER="2026-11-23b"; // 画面を変えたら上げる（設定の一番下に表示。新しい版があれば自動で読みこみ直す）
 const DAYS=[0,1,3,7,14,30,60];
 const LV=["未学習","Lv.1","Lv.2","Lv.3","Lv.4","Lv.5","定着"];
 const TYPES={en2ja:"英語を見て意味を選ぶ",ja2en:"意味を見て英語を選ぶ",cloze:"例文の空欄に入る語を選ぶ",listen:"発音を聞いて意味を選ぶ",spell:"つづりを書く（Lv.2から）",para:"ふつうの英語からネイティブの表現を選ぶ"};
@@ -515,6 +518,31 @@ function rankHTML(){
 const byId=id=>S.words.find(w=>w.id===id);
 const isDue=w=>w.stage>0&&w.due&&w.due<=today();
 const dueList=()=>S.words.filter(isDue);
+/* ---------- 復習の細かい設定（1回の語数・時間・順番・単語帳・まちがえた単語のくり返し） ---------- */
+const REV_DEF={n:50,min:0,order:"old",book:"all",retry:"soon"};
+const revSet=()=>Object.assign({},REV_DEF,S.settings.rev||{});
+const wordBooks=()=>[...new Set(S.words.map(w=>bookOf(w.set)))];
+function revPool(){const r=revSet();return dueList().filter(w=>r.book==="all"||bookOf(w.set)===r.book);}
+function revPick(){const r=revSet();let l=revPool();
+  if(r.order==="old")l=shuffle(l).sort((a,b)=>(a.due||"").localeCompare(b.due||""));
+  else if(r.order==="weak"){const wk=w=>(w.ng||0)/((w.ok||0)+(w.ng||0)+1);l=shuffle(l).sort((a,b)=>(a.stage-b.stage)||(wk(b)-wk(a)));}
+  else l=shuffle(l);
+  if(r.n)l=l.slice(0,r.n);return shuffle(l);}
+function requeue(id){ // まちがえた単語をこの回でもう一度：すぐ（3問あと）か、最後にまとめて
+  Q.requeued[id]=(Q.requeued[id]||0)+1;if(Q.requeued[id]>10)return;
+  const it={id,phase:"quiz"};if(revSet().retry==="soon"&&Q.mode!=="new"){const at=Math.min(Q.items.length,Q.i+4);Q.items.splice(at,0,it);}else Q.items.push(it);}
+function revSetHTML(){const r=revSet(),bk=wordBooks(),pool=revPool().length;
+  const sel=(k,opts)=>`<select data-rev="${k}" aria-label="${k}">${opts.map(([v,l])=>`<option value="${v}" ${String(r[k])===String(v)?"selected":""}>${l}</option>`).join("")}</select>`;
+  const sum=`${r.n?`1回 ${r.n}語`:"ぜんぶ"}${r.min?`・${r.min}分`:""}・${{old:"期限の古い順",weak:"苦手な順",rand:"ランダム"}[r.order]}${r.book!=="all"?`・${esc(r.book)}`:""}`;
+  return`<details class="revset"><summary><span class="note">復習のしかた：${sum}</span></summary>
+    <div class="revgrid">
+      <label>1回の語数${sel("n",[[20,"20語"],[30,"30語"],[50,"50語"],[75,"75語"],[100,"100語"],[0,"ぜんぶ"]])}</label>
+      <label>時間${sel("min",[[0,"決めない"],[5,"5分"],[10,"10分"],[15,"15分"],[20,"20分"],[30,"30分"],[45,"45分"],[60,"60分"]])}</label>
+      <label>順番${sel("order",[["old","期限の古い順"],["weak","苦手な順"],["rand","ランダム"]])}</label>
+      <label>単語帳${sel("book",[["all","ぜんぶ"],...bk.map(b=>[esc(b),esc(b)])])}</label>
+      <label>まちがえた単語${sel("retry",[["soon","すぐ（3問あと）"],["end","最後にまとめて"]])}</label>
+    </div>
+    <p class="note">${r.book!=="all"?`${esc(r.book)}の復習 ${pool}語。`:""}時間を決めると、時間が来たらその問題の区切りで終わります。やらなかった単語は、次の回に残ります。</p></details>`;}
 const soonAll=()=>S.words.filter(w=>w.soon);
 const soonReady=()=>soonAll().filter(w=>w.soon<=Date.now());
 const hm=ms=>{const d=new Date(ms);return d.getHours()+":"+pad(d.getMinutes());};
@@ -606,7 +634,8 @@ function renderHome(){
   ${storageOK?"":'<p class="warn">この画面では記録を保存できません。Safari や Chrome で開き直してください。</p>'}
   <section class="card hero">
     <div class="hero-row"><div><p class="label">今日の復習</p><p class="big">${due}<small>語</small></p></div>
-      <button class="btn primary" data-act="start-review" ${due?"":"disabled"}>${due?"復習をはじめる":"今日の復習は完了"}</button></div>
+      <button class="btn primary" data-act="start-review" ${revPool().length?"":"disabled"}>${due?(revPool().length?(revSet().n&&revPool().length>revSet().n?`${revSet().n}語 復習する`:"復習をはじめる"):"この単語帳は完了"):"今日の復習は完了"}</button></div>
+    ${due?revSetHTML():""}
     <div class="hero-row sub"><div><p class="label">新しく覚える（1日${S.settings.perDay}語まで）</p><p class="mid">${nl}<small>語</small></p>${newMixHTML(nl)}</div>
       <button class="btn" data-act="start-new" ${nl?"":"disabled"}>${newTxt}</button></div>
     ${soonRowHTML()}
@@ -951,13 +980,15 @@ function startSession(mode,set,list){
   let items=[];
   if(list&&mode==="review")items=shuffle(list.slice()).map(w=>({id:w.id,phase:"quiz"}));
   else if(list&&mode==="new"){const ws=list;for(let i=0;i<ws.length;i+=5){const ch=ws.slice(i,i+5);ch.forEach(w=>items.push({id:w.id,phase:"intro"}));shuffle(ch).forEach(w=>items.push({id:w.id,phase:"quiz"}));}}
-  else if(mode==="review")items=shuffle(dueList()).map(w=>({id:w.id,phase:"quiz"}));
+  else if(mode==="review")items=revPick().map(w=>({id:w.id,phase:"quiz"}));
+  else if(mode==="retry"&&list)items=shuffle(list.slice()).map(w=>({id:w.id,phase:"quiz"}));
   else if(mode==="soon")items=shuffle(soonReady()).map(w=>({id:w.id,phase:"quiz"}));
   else if(mode==="new"){const ws=pickNew(newLeft());for(let i=0;i<ws.length;i+=5){const ch=ws.slice(i,i+5);ch.forEach(w=>items.push({id:w.id,phase:"intro"}));shuffle(ch).forEach(w=>items.push({id:w.id,phase:"quiz"}));}}
   else if(mode==="unit")items=shuffle(courseUnitWords(set)).map(w=>({id:w.id,phase:"quiz"}));
   else items=shuffle(S.words.filter(w=>w.set===set)).map(w=>({id:w.id,phase:"quiz"}));
   if(!items.length)return;
   Q={mode,set,items,i:0,res:{},requeued:{},n:0,c:0,done:false,combo:0,bestCombo:0,lastT:Date.now(),newMedals:[]};
+  if(mode==="review"&&!list&&!F&&revSet().min)Q.end=Date.now()+revSet().min*60000;
   prepare();saveQ();render();window.scrollTo(0,0);speakCurrent();
 }
 function prepare(){
@@ -1032,7 +1063,7 @@ function settle(ok){
     longQ=Q.cur.type==="cloze"||(Q.cur.type==="para"&&String(Q.cur.w.para||"").split(/\s+/).length>4),
     lim=base?base*(Q.cur.type==="spell"?3:1)+(longQ?5:0):0; // 文を読む問題は5秒おまけ
   Q.sec=Math.round(sec);Q.slow=ok&&lim>0&&sec>lim&&Q.mode!=="free";
-  if(!ok){r.wrong=true;r.grade="bad";Q.requeued[id]=(Q.requeued[id]||0)+1;if(Q.requeued[id]<=10)Q.items.push({id,phase:"quiz"});}
+  if(!ok){r.wrong=true;r.grade="bad";requeue(id);}
   else if(Q.slow){r.grade="unsure";}
   else r.grade="ok";
   Q.n++;if(ok)Q.c++;
@@ -1041,14 +1072,14 @@ function settle(ok){
   const nb=document.querySelector(".grades")||document.getElementById("nextbtn");
   if(nb)setTimeout(()=>nb.scrollIntoView({block:"end",behavior:"smooth"}),50);
 }
-function next(){tick();if(flowTimeUp()&&!Q.done){finish();saveQ();render();window.scrollTo(0,0);return;}Q.i++;prepare();saveQ();render();window.scrollTo(0,0);speakCurrent();}
+function next(){tick();if((flowTimeUp()||(Q.end&&Date.now()>=Q.end))&&!Q.done){Q.timeUp=!!Q.end;finish();saveQ();render();window.scrollTo(0,0);return;}Q.i++;prepare();saveQ();render();window.scrollTo(0,0);speakCurrent();}
 // 自分で決める3段階：◎完璧（もう出さない＝3ヶ月後に確認）・○OK（いつもの間隔）・▲うろ覚え（明日もう一度）
 function grade(g){
   const id=Q.cur.w.id,r=Q.res[id];if(!r)return next();
   r.grade=g;
   if(g==="bad"){ // 正解でも当てずっぽうだったとき：まちがいと同じ扱い（この回でもう一度・間隔は最初から）
     if(!r.wrong){r.wrong=true;Q.combo=0;}r.last=false;
-    Q.requeued[id]=(Q.requeued[id]||0)+1;if(Q.requeued[id]<=10)Q.items.push({id,phase:"quiz"});}
+    requeue(id);}
   if(g==="perfect"){Q.items=Q.items.filter((it,k)=>k<=Q.i||it.id!==id);} // この回ではもう出さない
   next();
 }
@@ -1057,7 +1088,7 @@ function known(){ // 新しい単語の紹介で「もう知ってる」
   Q.items=Q.items.filter((it,k)=>k<=Q.i||it.id!==w.id);Q.known=(Q.known||0)+1;save();next();
 }
 function applySRS(){
-  if(!Q||Q.mode==="free"||Q.mode==="unit"||Q.applied)return;Q.applied=true;const t=today();
+  if(!Q||Q.mode==="free"||Q.mode==="unit"||Q.mode==="retry"||Q.applied)return;Q.applied=true;const t=today();
   const gap=(S.settings.soonMin||0)*60000,later=Date.now()+gap;
   if(Q.mode==="soon"){
     Object.entries(Q.res).forEach(([id,r])=>{const w=byId(id);if(!w)return;
@@ -1086,7 +1117,7 @@ function finish(){
 
 /* ---------- 全問正解までの時間と自己ベスト ---------- */
 // 新しい単語は語数ごと、セット練習はセットごと、復習・おさらいは1語あたりの時間で比べる
-const MODE_JA={new:"新しい単語",review:"今日の復習",soon:"おさらい",free:"セット練習"};
+const MODE_JA={new:"新しい単語",review:"今日の復習",soon:"おさらい",free:"セット練習",retry:"まちがえた単語"};
 const fmtSec=sec=>sec<60?`${sec}秒`:`${Math.floor(sec/60)}分${sec%60?`${sec%60}秒`:""}`;
 function recKey(){return Q.mode==="new"?`new:${Q.total}`:Q.mode==="free"?`set:${Q.set}`:Q.mode;}
 function recName(k){const[m,x]=k.split(/:(.*)/);return m==="new"?`新しい単語 ${x}語`:m==="set"?`セット ${x}`:MODE_JA[m]||m;}
@@ -1120,7 +1151,7 @@ function bestsHTML(){
 function renderQuiz(){
   if(Q.done)return renderSummary();
   const total=Q.items.length,pct=Math.round(Q.i/total*100),q=Q.cur,w=q.w;
-  const head=`<div class="qhead"><button class="ghost" data-act="quit">やめる</button><div class="prog"><i style="width:${pct}%"></i></div><span class="count">${Math.min(Q.i+1,total)}/${total}</span>${F?`<span class="flowleft">⏱${Math.max(0,Math.ceil((F.end-Date.now())/60000))}分</span>`:""}</div>`;
+  const head=`<div class="qhead"><button class="ghost" data-act="quit">やめる</button><div class="prog"><i style="width:${pct}%"></i></div><span class="count">${Math.min(Q.i+1,total)}/${total}</span>${F?`<span class="flowleft">⏱${Math.max(0,Math.ceil((F.end-Date.now())/60000))}分</span>`:Q.end?`<span class="flowleft">⏱${Math.max(0,Math.ceil((Q.end-Date.now())/60000))}分</span>`:""}</div>`;
   if(q.type==="intro")return head+`
     <article class="card qcard"><p class="kicker">新しい単語・${esc(w.set)}</p>
       <p class="word"><mark>${esc(w.w)}</mark></p>${ipaHTML(w)}
@@ -1172,8 +1203,8 @@ function renderSummary(){
   const t=TIERS[Q.tier],pct=Math.round(Q.rate*100);
   const rb=rankOf(Q.starsBefore),ra=rankOf(S.stats.stars);
   const sm=S.settings.soonMin,smTxt=sm>=60?`${sm/60}時間後`:`${sm}分後`;
-  const msg=Q.mode==="free"?"セット練習なので復習の予定はそのままです。":Q.mode==="soon"?(miss.length&&sm?`まちがえた単語は${smTxt}にもう一度おさらいできます。`:"おさらい完了！明日からの復習にもつながります。"):sm&&(Q.mode==="new"||miss.length)?`${smTxt}（${hm(Date.now()+sm*60000)}ごろ）に、もう一度おさらいできます。`:miss.length?"まちがえた単語は明日の復習にもう一度出ます。":"次の復習日まで間隔がのびました。";
-  return `<article class="card sum"><p class="kicker">${Q.mode==="review"?"今日の復習":Q.mode==="new"?"新しい単語":Q.mode==="soon"?"おさらい":esc(Q.set)+" セット練習"}</p>
+  const msg=Q.mode==="retry"?"まちがえた単語のくり返しです（復習の予定はそのまま。まちがえた単語は明日の復習に出ます）。":Q.mode==="free"?"セット練習なので復習の予定はそのままです。":Q.mode==="soon"?(miss.length&&sm?`まちがえた単語は${smTxt}にもう一度おさらいできます。`:"おさらい完了！明日からの復習にもつながります。"):sm&&(Q.mode==="new"||miss.length)?`${smTxt}（${hm(Date.now()+sm*60000)}ごろ）に、もう一度おさらいできます。`:miss.length?"まちがえた単語は明日の復習にもう一度出ます。":"次の復習日まで間隔がのびました。";
+  return `<article class="card sum"><p class="kicker">${Q.mode==="retry"?"まちがえた単語をもう一度":Q.mode==="review"?"今日の復習":Q.mode==="new"?"新しい単語":Q.mode==="soon"?"おさらい":esc(Q.set)+" セット練習"}</p>
     <div class="tier t${Q.tier}"><p class="tier-stars pop" aria-label="星${Q.stars}つ">${"★".repeat(Q.stars)}<span class="off">${"★".repeat(5-Q.stars)}</span></p>
       <p class="tier-msg">${t.m}</p><p class="tier-sub">${t.s}</p></div>
     <div class="stats"><div class="stat"><span>正答率</span><b>${pct}<small>%</small></b></div><div class="stat"><span>最高コンボ</span><b>${Q.bestCombo}<small>連続</small></b></div><div class="stat"><span>獲得スター</span><b>★${Q.stars}</b></div></div>
@@ -1184,8 +1215,12 @@ function renderSummary(){
     <p>${msg}</p>
     ${(()=>{const rs=Object.values(Q.res),np=rs.filter(r=>r.grade==="perfect").length,nu=rs.filter(r=>r.grade==="unsure"&&!r.wrong).length,nk=Q.known||0;
       return np||nu||nk?`<p class="note">${np?`◎完璧 ${np}語・`:""}${nk?`もう知ってる ${nk}語・`:""}${np||nk?"これらは3ヶ月後に確認します。":""}${nu?`▲うろ覚え ${nu}語は明日もう一度出ます。`:""}</p>`:"";})()}
+    ${Q.timeUp?`<p class="note">時間になったので、ここで終わりにしました。</p>`:""}
     ${miss.length?`<h2>まちがえた単語</h2><ul class="miss">${miss.map(w=>`<li><b>${esc(w.w)}</b><span>${esc(w.ja)}</span></li>`).join("")}</ul>`:""}
-  </article><button class="btn primary wide" data-act="home">ホームへ</button>`;
+  </article>
+  ${miss.length&&!F?`<button class="btn wide" data-act="retry-miss">まちがえた単語をもう一度（${miss.length}語）</button>`:""}
+  ${(Q.mode==="review"||Q.mode==="retry")&&!F&&revPool().length?`<button class="btn wide" data-act="start-review">続けて復習する（残り ${revPool().length}語${revSet().n?`・次の${Math.min(revSet().n,revPool().length)}語`:""}）</button>`:""}
+  <button class="btn primary wide" data-act="home">ホームへ</button>`;
 }
 
 /* ---------- add ---------- */
@@ -1686,6 +1721,7 @@ document.addEventListener("click",e=>{
   const a=b.dataset.act;
   if(a==="tab"){view=b.dataset.v;confirmDel=null;confirmRestore=false;render();window.scrollTo(0,0);return;}
   if(a==="start-review")return startSession("review");
+  if(a==="retry-miss"){const miss=Object.entries(Q.res).filter(([,r])=>r.wrong).map(([id])=>byId(id)).filter(Boolean);if(miss.length)return startSession("retry",null,miss);return;}
   if(a==="start-new")return startSession("new");
   if(a==="start-soon")return startSession("soon");
   if(a==="free")return startSession("free",b.dataset.set);
@@ -1820,6 +1856,7 @@ document.addEventListener("change",e=>{
   if(["f-min","f-mode","f-book","f-unit"].includes(t.id)){const st=S.settings.flow=Object.assign({min:15,mode:"auto",book:"all",unit:"all"},S.settings.flow||{});
     if(t.id==="f-min")st.min=Number(t.value);if(t.id==="f-mode")st.mode=t.value;if(t.id==="f-book"){st.book=t.value;st.unit="all";}if(t.id==="f-unit")st.unit=t.value;
     save();if(t.id==="f-book")render();return;}
+  if(t.dataset&&t.dataset.rev){const k=t.dataset.rev;S.settings.rev=Object.assign(revSet(),{[k]:["n","min"].includes(k)?Number(t.value):t.value});save();render();const d=document.querySelector(".revset");if(d)d.open=true;return;}
   if(t.dataset&&t.dataset.share!==undefined){if(t.checked)shareSel.add(t.dataset.share);else shareSel.delete(t.dataset.share);shareRefresh();return;}
   if(t.dataset&&t.dataset.sharebook!==undefined){document.querySelectorAll("[data-share]").forEach(k=>{if(k.dataset.sbook===t.dataset.sharebook){k.checked=t.checked;if(t.checked)shareSel.add(k.dataset.share);else shareSel.delete(k.dataset.share);}});shareRefresh();return;}
   if(t.dataset&&t.dataset.book!==undefined){S.settings.newOff=S.settings.newOff||{};if(t.checked)delete S.settings.newOff[t.dataset.book];else S.settings.newOff[t.dataset.book]=true;save();return;}
