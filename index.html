@@ -401,7 +401,7 @@ const SEED=[
 ];
 
 const KEY="c-drill-v1";
-const APP_VER="2026-11-23o"; // 画面を変えたら上げる（設定の一番下に表示。新しい版があれば自動で読みこみ直す）
+const APP_VER="2026-11-23p"; // 画面を変えたら上げる（設定の一番下に表示。新しい版があれば自動で読みこみ直す）
 const DAYS=[0,1,3,7,14,30,60];
 const LV=["未学習","Lv.1","Lv.2","Lv.3","Lv.4","Lv.5","定着"];
 const TYPES={en2ja:"英語を見て意味を選ぶ",ja2en:"意味を見て英語を選ぶ",cloze:"例文の空欄に入る語を選ぶ",listen:"発音を聞いて意味を選ぶ",spell:"つづりを書く（Lv.2から）",para:"ふつうの英語からネイティブの表現を選ぶ"};
@@ -1659,7 +1659,14 @@ function lessonPages(l){const book=bookOf(l.set),idx=(S.pageIdx||{})[book];if(!i
 function pagesHTML(l){const ps=lessonPages(l);if(!ps.length)return"";const on=S.settings.showPages!==false,book=bookOf(l.set);
   return`<div class="bookpages"><button class="btn wide" data-act="l-pages">${on?"▼":"▶"} 本のページ（図・写真）を${on?"隠す":"見る"}　p.${ps[0]}${ps.length>1?`〜${ps[ps.length-1]}`:""}</button>
     ${on?`<div class="pgs">${ps.map(p=>`<figure><img data-pg="${esc(book+"|"+p)}" alt="p.${p}" loading="lazy"><figcaption>p.${p}（押すと大きく）</figcaption></figure>`).join("")}</div>`:""}</div>`;}
-function fillPages(){document.querySelectorAll("img[data-pg]:not([src])").forEach(async im=>{try{const b=await idbGet(im.dataset.pg);if(b)im.src=URL.createObjectURL(b);else{const fg=im.closest(".lfig");if(fg)fg.hidden=true;else im.alt="この画像はまだ取りこまれていません";}}catch(e){im.alt="画像を読めませんでした";}});}
+// 設定画面：スマホに入っている画像を本ごとに数える
+async function imgStats(){const el=document.getElementById("imgstat");if(!el)return;
+  try{const db=await idb();const keys=await new Promise((ok,ng)=>{const r=db.transaction("pages").objectStore("pages").getAllKeys();r.onsuccess=()=>ok(r.result||[]);r.onerror=()=>ng(r.error);});
+    const by={};keys.forEach(k=>{const[b,x]=String(k).split("|");const o=by[b]||(by[b]={f:0,p:0});if(/^f/.test(x))o.f++;else o.p++;});
+    const rows=Object.entries(by);
+    el.innerHTML=rows.length?rows.map(([b,o])=>`<p><b>${esc(b)}</b>　図・写真 <b>${o.f}</b>枚${o.p?`・本のページ ${o.p}枚`:""}</p>`).join(""):`<p class="warn">まだ画像は入っていません</p>`;
+  }catch(e){el.innerHTML=`<p class="warn">画像の保存場所を開けませんでした（${esc((e&&e.message)||"不明")}）</p>`;}}
+function fillPages(){if(document.getElementById("imgstat"))imgStats();document.querySelectorAll("img[data-pg]:not([src])").forEach(async im=>{try{const b=await idbGet(im.dataset.pg);if(b)im.src=URL.createObjectURL(b);else{const fg=im.closest(".lfig");if(fg)fg.hidden=true;else im.alt="この画像はまだ取りこまれていません";}}catch(e){im.alt="画像を読めませんでした";}});}
 // 選んだファイルを1つずつ読みこむ（ページ画像のように、何個かまとめて選んでもOK）
 function readFile(f,label){return new Promise((ok,ng)=>{const t0=Date.now();let got=false;
   setTimeout(()=>{if(!got)busy(`「${f.name}」の読みこみに時間がかかっています…`,null,"ドライブから直接選ぶと遅いことがあります。止まったままなら、画面を閉じて、ファイルを一度スマホに「ダウンロード」してから選んでください。",true);},15000);
@@ -1814,6 +1821,8 @@ function renderSettings(){
     <div class="field"><label class="label" for="bk-in">コードから元に戻す</label><textarea id="bk-in" rows="3" placeholder="保存したコードを貼りつけ"></textarea></div>
     <button class="btn ${confirmRestore?"primary":""} danger" data-act="restore">${confirmRestore?"今の記録を上書きして戻す":"元に戻す"}</button>
   </section>
+  <section class="card panel"><h2>本の画像（図・写真）</h2><div id="imgstat"><p class="note">数えています…</p></div>
+    <p class="note">「追加」→「ファイルから取りこむ」で入れた画像の枚数です。解説を開くと、文の中に図・写真が出ます。</p></section>
   <p class="note">版 ${APP_VER}</p>
   <p class="note">ホーム画面に追加しておくと、アプリのように毎日ひらけます（Safari の共有ボタン →「ホーム画面に追加」）。</p>`;
 }
