@@ -108,6 +108,10 @@ mark{background:linear-gradient(transparent 58%,var(--hl) 58%);color:inherit;pad
 .plans h2{margin-bottom:6px}.plan-row{display:block;width:100%;text-align:left;background:none;border:0;border-top:1px solid var(--line);padding:10px 0;color:inherit;font:inherit}
 .plans .plan-row:first-of-type{border-top:0}.plan-top{display:flex;flex-wrap:wrap;gap:6px;align-items:baseline}.plan-top small{opacity:.7}.plan-due{margin-left:auto;font-size:13px;opacity:.85}
 .plan-row.urgent .plan-due{color:var(--ng,#c0392b);font-weight:700}.plan-row .bar{display:block;margin:6px 0 4px}.plan-sub{display:block;font-size:12.5px;opacity:.85}.plan-hint{margin:4px 2px 10px}
+.bookpages{margin:6px 0 12px}.pgs{display:flex;flex-direction:column;gap:10px;margin-top:8px}.pgs figure{margin:0}.pgs img{width:100%;min-height:120px;border:1px solid var(--line);border-radius:8px;background:var(--soft)}
+.pgs figcaption{font-size:12px;opacity:.7;text-align:center}
+#pgzoom{position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:1000;overflow:auto;-webkit-overflow-scrolling:touch;touch-action:pinch-zoom pan-x pan-y}#pgzoom img{width:100%;display:block}#pgzoom p{color:#ddd;text-align:center;font-size:13px;padding:8px}
+@media(min-width:700px){.pgs{display:grid;grid-template-columns:1fr 1fr}}
 .opt.en{font-family:var(--f-word);font-weight:600;font-size:18px}
 .opt.is-ok{border-color:var(--ok);background:var(--ok-bg);color:var(--ok)}
 .opt.is-ng{border-color:var(--ng);background:var(--ng-bg);color:var(--ng)}
@@ -396,7 +400,7 @@ const SEED=[
 ];
 
 const KEY="c-drill-v1";
-const APP_VER="2026-11-23k"; // 画面を変えたら上げる（設定の一番下に表示。新しい版があれば自動で読みこみ直す）
+const APP_VER="2026-11-23l"; // 画面を変えたら上げる（設定の一番下に表示。新しい版があれば自動で読みこみ直す）
 const DAYS=[0,1,3,7,14,30,60];
 const LV=["未学習","Lv.1","Lv.2","Lv.3","Lv.4","Lv.5","定着"];
 const TYPES={en2ja:"英語を見て意味を選ぶ",ja2en:"意味を見て英語を選ぶ",cloze:"例文の空欄に入る語を選ぶ",listen:"発音を聞いて意味を選ぶ",spell:"つづりを書く（Lv.2から）",para:"ふつうの英語からネイティブの表現を選ぶ"};
@@ -637,7 +641,7 @@ function render(){
   const app=document.getElementById("app");
   document.getElementById("tabs").hidden=!!(Q||G||L);
   document.querySelectorAll("#tabs button").forEach(b=>b.classList.toggle("on",b.dataset.v===view));
-  app.innerHTML=Q?renderQuiz():G?renderGram():L?renderLesson():view==="home"?renderHome():view==="add"?renderAdd():view==="list"?renderList():view==="course"?renderCourse():renderSettings();
+  setTimeout(fillPages,0);app.innerHTML=Q?renderQuiz():G?renderGram():L?renderLesson():view==="home"?renderHome():view==="add"?renderAdd():view==="list"?renderList():view==="course"?renderCourse():renderSettings();
   app.querySelectorAll("[data-mixed]").forEach(c=>{c.indeterminate=true;});
 }
 
@@ -952,6 +956,7 @@ function renderLesson(){
   return`<div class="qhead"><button class="ghost" data-act="l-close">とじる</button>${flowBar()}<span class="count">${L.i+1}/${L.ids.length}</span></div>
   <article class="card lesson"><p class="kicker">${esc(l.set)}・解説${l.read?"・読んだ":""}</p><h1>${esc(l.title)}</h1>
     ${l.en?`<div class="langsw" role="group" aria-label="表示する言葉">${[["ja","日本語"],["en","English"],["both","両方"]].map(([v,t])=>`<button class="${lessonLang()===v?"on":""}" data-act="l-lang" data-v="${v}">${t}</button>`).join("")}<button class="say" data-act="l-say">${SPK}英語を聞く</button></div>`:""}
+    ${pagesHTML(l)}
     <div class="lbody">${lessonPairs(l)}</div>
     ${l.points&&l.points.length?`<div class="points"><h3>ポイント</h3><ul>${l.points.map(p=>`<li>${fmtInline(p)}</li>`).join("")}</ul></div>`:""}
     <p class="note">色のついた単語を押すと、意味と似た意味の単語が出ます。</p></article>
@@ -1623,7 +1628,32 @@ async function unpackText(code){
   const ds=new Blob([b64dec(code)]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
   return await new Response(ds).text();
 }
+/* ---------- 本のページの画像（スキャン）：スマホの中（IndexedDB）に保存して、解説の横で見られるようにする ---------- */
+// 画像は大きいので localStorage ではなく IndexedDB に入れる。どのページがあるかだけ S.pageIdx[本]=[ページ番号…] に持つ
+let idbP=null;
+function idb(){if(!idbP)idbP=new Promise((ok,ng)=>{try{const r=indexedDB.open("c-drill-img",1);r.onupgradeneeded=()=>r.result.createObjectStore("pages");r.onsuccess=()=>ok(r.result);r.onerror=()=>ng(r.error);}catch(e){ng(e);}});return idbP;}
+async function idbPut(items){const db=await idb();return new Promise((ok,ng)=>{const tx=db.transaction("pages","readwrite"),st=tx.objectStore("pages");items.forEach(([k,v])=>st.put(v,k));tx.oncomplete=ok;tx.onerror=()=>ng(tx.error);tx.onabort=()=>ng(tx.error);});}
+async function idbGet(k){const db=await idb();return new Promise((ok,ng)=>{const r=db.transaction("pages").objectStore("pages").get(k);r.onsuccess=()=>ok(r.result);r.onerror=()=>ng(r.error);});}
+const b64blob=b=>{const s=atob(b),u=new Uint8Array(s.length);for(let i=0;i<s.length;i++)u[i]=s.charCodeAt(i);return new Blob([u],{type:"image/jpeg"});};
+async function takePages(d){
+  const book=String(d.book||"").trim(),ent=Object.entries(d.pages||{});if(!book||!ent.length){toast("ページの画像が入っていませんでした");return;}
+  try{for(let i=0;i<ent.length;i+=20){busy(`「${book}」のページを保存しています…`,Math.round(i/ent.length*100),`${i}/${ent.length}ページ`);
+      await idbPut(ent.slice(i,i+20).map(([pg,b])=>[book+"|"+pg,b64blob(b)]));await new Promise(r=>setTimeout(r,0));}
+  }catch(e){busyOff();toast("保存できませんでした（"+((e&&e.message)||"容量不足かもしれません")+"）");return;}
+  S.pageIdx=S.pageIdx||{};const set=new Set(S.pageIdx[book]||[]);ent.forEach(([pg])=>set.add(Number(pg)));S.pageIdx[book]=[...set].sort((a,b)=>a-b);save();busyOff();
+  const ns=ent.map(([pg])=>Number(pg));toast(`${book}の本のページを${ent.length}枚保存しました（p.${Math.min(...ns)}〜${Math.max(...ns)}${d.part?`・${d.part}`:""}）。解説で見られます`);render();
+}
+// この解説が本のどのページか：order（始まりのページ）から、同じ本の次の解説の手前まで（最大4ページ）
+function lessonPages(l){const book=bookOf(l.set),idx=(S.pageIdx||{})[book];if(!idx||!idx.length)return[];
+  const st=Number(l.order);if(!st||!idx.includes(st))return[];
+  const nexts=lAll().filter(x=>bookOf(x.set)===book&&Number(x.order)>st).map(x=>Number(x.order));const nx=nexts.length?Math.min(...nexts):st+2;
+  const out=[];for(let p=st;p<Math.min(nx,st+4);p++)if(idx.includes(p))out.push(p);if(!out.length)out.push(st);return out;}
+function pagesHTML(l){const ps=lessonPages(l);if(!ps.length)return"";const on=S.settings.showPages!==false,book=bookOf(l.set);
+  return`<div class="bookpages"><button class="btn wide" data-act="l-pages">${on?"▼":"▶"} 本のページ（図・写真）を${on?"隠す":"見る"}　p.${ps[0]}${ps.length>1?`〜${ps[ps.length-1]}`:""}</button>
+    ${on?`<div class="pgs">${ps.map(p=>`<figure><img data-pg="${esc(book+"|"+p)}" alt="p.${p}" loading="lazy"><figcaption>p.${p}（押すと大きく）</figcaption></figure>`).join("")}</div>`:""}</div>`;}
+function fillPages(){document.querySelectorAll("img[data-pg]:not([src])").forEach(async im=>{try{const b=await idbGet(im.dataset.pg);if(b)im.src=URL.createObjectURL(b);else im.alt="この画像はまだ取りこまれていません";}catch(e){im.alt="画像を読めませんでした";}});}
 async function takeAny(text){ // 貼りつけた文：送るコードなら開いてから取りこむ
+  if(/^\s*\{"pagepack"/.test(String(text||"").slice(0,40))){let d;try{d=JSON.parse(text);}catch(e){toast("ページのファイルが壊れています");return;}return takePages(d);}
   const m=String(text||"").match(/CDRILL1:([A-Za-z0-9+\/=\s]+)/);
   if(m){try{text=await unpackText(m[1].replace(/\s+/g,""));}catch(e){toast("コードが読み取れませんでした。メッセージ全体をコピーしてください");return;}}
   aiTake(text);
@@ -1763,6 +1793,7 @@ function renderSettings(){
 
 /* ---------- events ---------- */
 document.addEventListener("click",e=>{
+  if(e.target&&e.target.matches&&e.target.matches("img[data-pg]")&&e.target.src){const o=document.createElement("div");o.id="pgzoom";o.dataset.act="pg-zoom";o.innerHTML=`<img src="${e.target.src}" alt=""><p>もう一度押すと閉じます・指で広げて拡大できます</p>`;document.body.appendChild(o);return;}
   const fi=e.target&&e.target.closest&&e.target.closest("label")&&e.target.closest("label").querySelector("input[data-aifile]");
   if(fi||(e.target&&e.target.matches&&e.target.matches("input[data-aifile]"))){(fi||e.target).value="";if(typeof ftr==="function"){ftr("ファイルを選ぶ画面を開きました…");window.__pickWait=Date.now();}} // 同じファイルをもう一度選んでも読みこむように
   const b=e.target.closest("[data-act]");if(!b)return;
@@ -1781,6 +1812,8 @@ document.addEventListener("click",e=>{
   if(a==="kw"){kwPop(b.dataset.id,b);return;}
   if(a==="pop-close"){const p=document.getElementById("pop");if(p)p.hidden=true;return;}
   if(a==="c-lessons"){const u=courseUnits(courseBook).find(x=>x.unit===b.dataset.u);if(u)openLessons(u.lessons.map(l=>l.id));return;}
+  if(a==="l-pages"){S.settings.showPages=S.settings.showPages===false;save();render();return;}
+  if(a==="pg-zoom"){const o=document.getElementById("pgzoom");if(o)o.remove();return;}
   if(a==="l-lang"){S.settings.lang=b.dataset.v;save();render();return;}
   if(a==="l-say"){const l=lAll().find(x=>x.id===L.ids[L.i]);if(l&&l.en)speak(l.en.replace(/^#+\s*/gm,"").replace(/^・/gm,"").replace(/\*\*/g,""));return;}
   if(a==="l-prev"){L.i=Math.max(0,L.i-1);render();window.scrollTo(0,0);return;}
