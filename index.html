@@ -105,6 +105,9 @@ mark{background:linear-gradient(transparent 58%,var(--hl) 58%);color:inherit;pad
 .busy-msg{font-weight:700;margin:10px 0 12px;word-break:break-all}.busy-prog{height:10px}
 .spin{width:34px;height:34px;margin:0 auto;border:4px solid var(--line,#ddd);border-top-color:var(--ink,#2b2f8a);border-radius:50%;animation:spin 1s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
 .alt-file{margin-top:8px;font-size:14px;opacity:.85}
+.plans h2{margin-bottom:6px}.plan-row{display:block;width:100%;text-align:left;background:none;border:0;border-top:1px solid var(--line);padding:10px 0;color:inherit;font:inherit}
+.plans .plan-row:first-of-type{border-top:0}.plan-top{display:flex;flex-wrap:wrap;gap:6px;align-items:baseline}.plan-top small{opacity:.7}.plan-due{margin-left:auto;font-size:13px;opacity:.85}
+.plan-row.urgent .plan-due{color:var(--ng,#c0392b);font-weight:700}.plan-row .bar{display:block;margin:6px 0 4px}.plan-sub{display:block;font-size:12.5px;opacity:.85}.plan-hint{margin:4px 2px 10px}
 .opt.en{font-family:var(--f-word);font-weight:600;font-size:18px}
 .opt.is-ok{border-color:var(--ok);background:var(--ok-bg);color:var(--ok)}
 .opt.is-ng{border-color:var(--ng);background:var(--ng-bg);color:var(--ng)}
@@ -393,7 +396,7 @@ const SEED=[
 ];
 
 const KEY="c-drill-v1";
-const APP_VER="2026-11-23j"; // 画面を変えたら上げる（設定の一番下に表示。新しい版があれば自動で読みこみ直す）
+const APP_VER="2026-11-23k"; // 画面を変えたら上げる（設定の一番下に表示。新しい版があれば自動で読みこみ直す）
 const DAYS=[0,1,3,7,14,30,60];
 const LV=["未学習","Lv.1","Lv.2","Lv.3","Lv.4","Lv.5","定着"];
 const TYPES={en2ja:"英語を見て意味を選ぶ",ja2en:"意味を見て英語を選ぶ",cloze:"例文の空欄に入る語を選ぶ",listen:"発音を聞いて意味を選ぶ",spell:"つづりを書く（Lv.2から）",para:"ふつうの英語からネイティブの表現を選ぶ"};
@@ -437,6 +440,8 @@ function restoreQ(){try{
 /* ---------- game layer ---------- */
 const newStats=()=>({correct:0,timeMs:0,sessions:0,perfect:0,stars:0,bestCombo:0,bestStreak:0,medals:{},best:{}});
 function normalize(){
+  S.plans=S.plans&&typeof S.plans==="object"?S.plans:{};
+  if(S.plan&&S.plan.book){S.plans[S.plan.book]=Object.assign({},S.plan,S.plans[S.plan.book]||{});} S.plan=null; // 1冊だけだった計画を、テキストごとの計画に
   S.settings=Object.assign({perDay:10,soonMin:60,slowSec:10},S.settings||{});
   if(!S.settings.slow10){if(S.settings.slowSec===5)S.settings.slowSec=10;S.settings.slow10=true;} // 5秒の初期値を10秒に変更S.settings.types=Object.assign(defTypes(),S.settings.types||{});S.days=S.days||{};S.grammar=S.grammar||[];S.tests=S.tests||{};S.lessons=S.lessons||[];
   if(!S.stats){S.stats=newStats();S.stats.correct=Object.values(S.days).reduce((a,d)=>a+(d.c||0),0);}
@@ -560,17 +565,18 @@ const newList=()=>{const off=S.settings.newOff||{};return S.words.filter(w=>w.st
 // 新しく覚える単語を、単語帳ごとの「まだ覚えていない語数」の割合で割り振る（各単語帳の中は本の順番）
 function pickNew(n){
   // テキストの計画があるときは、そのテキストの次のUnitから、間に合うペースの語数を先に出す
-  const pi=S.plan&&S.plan.book?planInfo():null;
-  if(pi&&!(S.settings.newOff||{})[pi.p.book]){
-    const mine=pi.st.flatMap(x=>x.u.words.filter(w=>!w.stage)),k=Math.min(n,mine.length,Math.max(1,pi.wordsPerDay));
-    const first=mine.slice(0,k),rest=k<n?pickNewMix(n-k,pi.p.book):[];
-    const out=[];first.forEach((w,i)=>out.push({w,pos:(i+.5)/first.length}));rest.forEach((w,i)=>out.push({w,pos:(i+.5)/rest.length}));
+  const off=S.settings.newOff||{},pis=planList().filter(pi=>!off[pi.p.book]&&pi.wordsLeft);
+  if(pis.length){const groups=[],skip=new Set();let left=n;
+    const need=pis.reduce((a,pi)=>a+Math.max(1,pi.wordsPerDay),0),scale=Math.min(1,n/need); // 計画が複数なら、必要なペースの割合で分ける
+    pis.forEach(pi=>{skip.add(pi.p.book);if(left<=0)return;const mine=pi.st.flatMap(x=>x.u.words.filter(w=>!w.stage)),k=Math.min(left,mine.length,Math.max(1,Math.round(Math.max(1,pi.wordsPerDay)*scale)));if(k){groups.push(mine.slice(0,k));left-=k;}});
+    if(left>0)groups.push(pickNewMix(left,skip));
+    const out=[];groups.forEach(g=>g.forEach((w,i)=>out.push({w,pos:(i+.5)/g.length})));
     return out.sort((a,b)=>a.pos-b.pos).map(o=>o.w);
   }
   return pickNewMix(n,null);
 }
 function pickNewMix(n,skipBook){
-  const all=newList().filter(w=>bookOf(w.set)!==skipBook),by=new Map();all.forEach(w=>{const b=bookOf(w.set);if(!by.has(b))by.set(b,[]);by.get(b).push(w);});
+  const sk=skipBook instanceof Set?skipBook:new Set(skipBook?[skipBook]:[]);const all=newList().filter(w=>!sk.has(bookOf(w.set))),by=new Map();all.forEach(w=>{const b=bookOf(w.set);if(!by.has(b))by.set(b,[]);by.get(b).push(w);});
   n=Math.min(n,all.length);if(!n)return[];
   const al=[...by.entries()].map(([b,ws])=>{const q=n*ws.length/all.length;return{b,ws,k:Math.floor(q),r:q-Math.floor(q)};});
   if(n>=al.length)al.forEach(x=>{if(!x.k){x.k=1;x.r=-1;}}); // 語数が足りるときは、どの単語帳からも1語は出す
@@ -819,10 +825,11 @@ function unitStats(book,u){
   const status=done&&!weak?"完了":weak?"苦手":learned||read?"学習中":"未着手";
   return{read,n,learned,pct:n?Math.round(learned/n*100):0,acc,last,best,done,weak,status,tests};
 }
-function planInfo(){
-  const p=S.plan;if(!p||!p.book||!p.deadline)return null;
+function planInfo(book){
+  const p=(S.plans||{})[book];if(!p||!p.deadline)return null;p.book=book;
   let units=courseUnits(p.book);
-  if(p.from&&p.to){const a=units.findIndex(u=>u.unit===p.from),b=units.findIndex(u=>u.unit===p.to);if(a>=0&&b>=0)units=units.slice(Math.min(a,b),Math.max(a,b)+1);}
+  const allN=units.length;if(p.from&&p.to){const a=units.findIndex(u=>u.unit===p.from),b=units.findIndex(u=>u.unit===p.to);if(a>=0&&b>=0)units=units.slice(Math.min(a,b),Math.max(a,b)+1);}
+  const partial=units.length<allN;
   if(!units.length)return null;
   const st=units.map(u=>({u,s:unitStats(p.book,u)}));
   const total=units.length,done=st.filter(x=>x.s.done).length,left=total-done;
@@ -832,23 +839,27 @@ function planInfo(){
   const perDay=left/daysLeft,perWeek=Math.ceil(perDay*7);
   const next=st.filter(x=>!x.s.done).slice(0,Math.max(1,Math.ceil(perDay)));
   const wordsLeft=st.reduce((a,x)=>a+x.u.words.filter(w=>!w.stage).length,0);
-  return{p,st,total,done,left,daysLeft,perDay,perWeek,expected,diff,next,wordsLeft,wordsPerDay:Math.ceil(wordsLeft/daysLeft)};
+  return{p,partial,st,total,done,left,daysLeft,perDay,perWeek,expected,diff,next,wordsLeft,wordsPerDay:Math.ceil(wordsLeft/daysLeft)};
 }
-const fmtPace=v=>v>=1?`1日あたり ${Math.round(v*10)/10}Unit`:`約${Math.floor(1/Math.max(v,1e-6))}日に1Unit`;
-function planHomeHTML(){
-  const pi=planInfo();if(!pi)return"";
-  const ahead=pi.diff>0?`<b class="ok-t">予定より${pi.diff}Unit先行</b>`:pi.diff<0?`<b class="ng-t">予定より${-pi.diff}Unit遅れ</b>`:"予定どおり";
-  return`<section class="card hero plan"><div class="hero-row"><div><p class="label">${esc(pi.p.book)}${pi.p.from&&pi.p.to?` ${esc(pi.p.from)}〜${esc(pi.p.to)}`:""}（${md(pi.p.deadline)}まで・あと${pi.daysLeft}日）</p>
-    <p class="mid">${pi.done}<small>/${pi.total} Unit 完了</small></p></div><button class="btn primary" data-act="tab" data-v="course">テキストへ</button></div>
-    <span class="bar"><i style="width:${Math.round(pi.done/pi.total*100)}%"></i></span>
-    <p class="note">${ahead}。${fmtPace(pi.perDay)}のペース（今週の目標 ${pi.perWeek}Unit）。次は ${pi.next.map(x=>esc(x.u.unit)).join("・")}</p></section>`;
+// 計画のあるテキストを、期限の近い順に
+function planList(){return Object.keys(S.plans||{}).filter(b=>courseBooks().includes(b)).map(planInfo).filter(Boolean).sort((a,b)=>a.p.deadline.localeCompare(b.p.deadline));}
+const fmtPace=v=>v>=0.5?`1日あたり ${Math.round(v*10)/10}単元`:`約${Math.round(1/Math.max(v,1e-6))}日に1単元`;
+function planHomeHTML(){ // ホーム：計画のあるテキストを全部、期限の近い順に
+  const ps=planList();
+  if(!ps.length)return courseBooks().length?`<p class="note plan-hint">テキストごとに「いつまでに終えるか」を決めると、ここに期限と進み具合が並びます（下のメニュー「テキスト」→「ペース」）。</p>`:"";
+  return`<section class="card plans"><h2>勉強の期限 <span class="note">${ps.length}冊・期限の近い順</span></h2>${ps.map(pi=>{
+    const st=pi.diff>0?`<b class="ok-t">${pi.diff}先行</b>`:pi.diff<0?`<b class="ng-t">${-pi.diff}遅れ</b>`:`<span>予定どおり</span>`,pc=Math.round(pi.done/pi.total*100),urgent=pi.daysLeft<=7;
+    return`<button class="plan-row${urgent?" urgent":""}" data-act="c-goto" data-b="${esc(pi.p.book)}">
+      <span class="plan-top"><b>${esc(pi.p.book)}</b>${pi.partial?`<small>${esc(pi.p.from)}〜${esc(pi.p.to)}</small>`:""}<span class="plan-due">${md(pi.p.deadline)}まで・あと${pi.daysLeft}日</span></span>
+      <span class="bar"><i style="width:${pc}%"></i></span>
+      <span class="plan-sub">${pi.done}/${pi.total} 完了（${pc}%）・${st}・${fmtPace(pi.perDay)}${pi.next.length&&pi.left?`・次は ${pi.next.slice(0,2).map(x=>esc(x.u.unit)).join("・")}`:""}${pi.left?"":"・すべて完了！"}</span></button>`;}).join("")}</section>`;
 }
 let courseBook="",courseOpen="";
 function renderCourse(){
   const books=courseBooks();if(!books.length)return`<header class="top"><div><p class="eyebrow">テキスト</p><h1>テキストの進み具合</h1></div></header><p class="empty">まだ単語帳やテキストが入っていません</p>`;
-  if(!courseBook||!books.includes(courseBook))courseBook=(S.plan&&books.includes(S.plan.book))?S.plan.book:books[0];
+  if(!courseBook||!books.includes(courseBook)){const ps=planList();courseBook=ps.length?ps[0].p.book:books[0];}
   const units=courseUnits(courseBook),st=units.map(u=>({u,s:unitStats(courseBook,u)}));
-  const pl=S.plan&&S.plan.book===courseBook?S.plan:null,pi=pl?planInfo():null;
+  const pl=(S.plans||{})[courseBook]||null,pi=pl?planInfo(courseBook):null;
   const weak=st.filter(x=>x.s.weak).sort((a,b)=>((a.s.last?a.s.last.s:a.s.acc)||0)-((b.s.last?b.s.last.s:b.s.acc)||0)).slice(0,3);
   const done=st.filter(x=>x.s.done).length;
   return`<header class="top"><div><p class="eyebrow">テキスト</p><h1>${esc(courseBook)}</h1></div></header>
@@ -988,7 +999,7 @@ function flowStart(){
   const sLes=(max)=>()=>{const ids=lAll().filter(inR).sort((a,b)=>(a.read?1:0)-(b.read?1:0)||unitNum(unitOf(a.set))-unitNum(unitOf(b.set))||(a.order||0)-(b.order||0)).filter((l,k,arr)=>!max||!l.read).slice(0,max||999).map(l=>l.id);return openLessons(ids);};
   const sNew=()=>{const l=newList().filter(inR).slice(0,Math.max(5,newLeft()));return l.length?(startSession("new",null,l),true):false;};
   const sGram=()=>{const l=gPractice(gAll().filter(inR)).slice(0,10);return l.length?(gStart("list",null,l),true):false;};
-  const sTest=()=>{const books=st.book==="all"?(S.plan?[S.plan.book]:courseBooks()):[st.book];
+  const sTest=()=>{const books=st.book==="all"?(planList().length?planList().map(x=>x.p.book):courseBooks()):[st.book];
     for(const b of books){const units=courseUnits(b).filter(u=>!us||us.has(b+"|"+u.unit));
       const u=units.find(u=>{const s=unitStats(b,u);return!s.done&&(st.mode==="test"||s.pct>=50);})||(st.mode==="test"?units[0]:null);
       if(u){courseBook=b;courseTest(u.unit);return true;}}return false;};
@@ -1783,9 +1794,10 @@ document.addEventListener("click",e=>{
   if(a==="c-gram")return gStart("unit",b.dataset.u);
   if(a==="c-plan"){const d=document.getElementById("c-deadline").value;if(!d||d<today()){toast("終える日を選んでください");return;}
     const fr=document.getElementById("c-from"),to=document.getElementById("c-to");
-    S.plan={book:courseBook,deadline:d,start:S.plan&&S.plan.book===courseBook?S.plan.start:today(),from:fr?fr.value:"",to:to?to.value:""};save();render();
-    toast(`${S.plan.from&&S.plan.to?`${S.plan.from}〜${S.plan.to}を`:""}${md(d)}までに終える計画にしました`);return;}
-  if(a==="c-unplan"){S.plan=null;save();render();return;}
+    const old=(S.plans||{})[courseBook];S.plans=S.plans||{};S.plans[courseBook]={book:courseBook,deadline:d,start:old?old.start:today(),from:fr?fr.value:"",to:to?to.value:""};save();render();
+    const np=S.plans[courseBook];toast(`${courseBook}${np.from&&np.to?` ${np.from}〜${np.to}`:""}を${md(d)}までに終える計画にしました（ホームに出ます）`);return;}
+  if(a==="c-unplan"){if(S.plans)delete S.plans[courseBook];save();render();return;}
+  if(a==="c-goto"){courseBook=b.dataset.b;courseOpen="";view="course";render();window.scrollTo(0,0);return;}
   if(a==="g-review")return gStart("review");
   if(a==="g-new")return gStart("new");
   if(a==="g-set")return gStart("set",b.dataset.set);
