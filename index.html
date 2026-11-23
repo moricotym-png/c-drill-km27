@@ -112,6 +112,7 @@ mark{background:linear-gradient(transparent 58%,var(--hl) 58%);color:inherit;pad
 .pgs figcaption{font-size:12px;opacity:.7;text-align:center}
 #pgzoom{position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:1000;overflow:auto;-webkit-overflow-scrolling:touch;touch-action:pinch-zoom pan-x pan-y}#pgzoom img{width:100%;display:block}#pgzoom p{color:#ddd;text-align:center;font-size:13px;padding:8px}
 @media(min-width:700px){.pgs{display:grid;grid-template-columns:1fr 1fr}}
+.lfig{margin:10px 0 14px;text-align:center}.lfig img{max-width:100%;border-radius:8px;border:1px solid var(--line);min-height:60px;background:var(--soft)}.lfig figcaption{font-size:12.5px;opacity:.75;margin-top:4px}
 .opt.en{font-family:var(--f-word);font-weight:600;font-size:18px}
 .opt.is-ok{border-color:var(--ok);background:var(--ok-bg);color:var(--ok)}
 .opt.is-ng{border-color:var(--ng);background:var(--ng-bg);color:var(--ng)}
@@ -400,7 +401,7 @@ const SEED=[
 ];
 
 const KEY="c-drill-v1";
-const APP_VER="2026-11-23m"; // 画面を変えたら上げる（設定の一番下に表示。新しい版があれば自動で読みこみ直す）
+const APP_VER="2026-11-23n"; // 画面を変えたら上げる（設定の一番下に表示。新しい版があれば自動で読みこみ直す）
 const DAYS=[0,1,3,7,14,30,60];
 const LV=["未学習","Lv.1","Lv.2","Lv.3","Lv.4","Lv.5","定着"];
 const TYPES={en2ja:"英語を見て意味を選ぶ",ja2en:"意味を見て英語を選ぶ",cloze:"例文の空欄に入る語を選ぶ",listen:"発音を聞いて意味を選ぶ",spell:"つづりを書く（Lv.2から）",para:"ふつうの英語からネイティブの表現を選ぶ"};
@@ -936,19 +937,23 @@ function linkify(text){
   return out+esc(text.slice(pos));
 }
 const fmtInline=x=>linkify(x).replace(/\*\*(.+?)\*\*/g,"<b>$1</b>");
+// 本文の中の図・写真：{{fig:キー|説明}} の行に、取りこんだ画像を差しこむ
+const FIG_RE=/^\s*\{\{fig:([^}|]+)(?:\|([^}]*))?\}\}\s*$/;
+const figSplit=t=>String(t||"").split("\n").map(x=>FIG_RE.test(x)?"\n"+x+"\n":x).join("\n");
 function lessonBody(t){
-  return String(t||"").split(/\n\s*\n/).map(par=>{const lines=par.split("\n").filter(x=>x.trim());if(!lines.length)return"";
+  return figSplit(t).split(/\n\s*\n/).map(par=>{const lines=par.split("\n").filter(x=>x.trim());if(!lines.length)return"";
+    const fm=lines.length===1&&lines[0].match(FIG_RE);if(fm)return`<figure class="lfig"><img data-pg="${esc(fm[1])}" alt="${esc(fm[2]||"図")}"><figcaption>${esc(fm[2]||"")}</figcaption></figure>`;
     if(/^#{1,3}\s/.test(lines[0]))return`<h3>${fmtInline(lines[0].replace(/^#+\s*/,""))}</h3>`+(lines.length>1?`<p>${lines.slice(1).map(fmtInline).join("<br>")}</p>`:"");
     if(lines.every(x=>/^\s*[・\-•●■◆]/.test(x)))return`<ul>${lines.map(x=>`<li>${fmtInline(x.replace(/^\s*[・\-•●■◆]\s*/,""))}</li>`).join("")}</ul>`;
     return`<p>${lines.map(fmtInline).join("<br>")}</p>`;}).join("");
 }
 function openLessons(ids,start){ids=ids.filter(id=>lAll().some(l=>l.id===id));if(!ids.length)return false;L={ids,i:start||0};render();window.scrollTo(0,0);return true;}
 const lessonLang=()=>S.settings.lang||"ja";
-const paras=t=>String(t||"").split(/\n\s*\n/).filter(x=>x.trim());
+const paras=t=>figSplit(t).split(/\n\s*\n/).filter(x=>x.trim());
 function lessonPairs(l){ // 日本語・英語・両方（段落の数が同じなら、段落ごとに日本語→英語の順に並べる）
   const m=l.en?lessonLang():"ja";if(m==="ja")return lessonBody(l.body);if(m==="en")return`<div lang="en">${lessonBody(l.en)}</div>`;
-  const a=paras(l.body),b=paras(l.en);
-  if(a.length===b.length)return a.map((x,i)=>lessonBody(x)+`<div class="enpar" lang="en">${lessonBody(b[i])}</div>`).join("");
+  const a=paras(l.body),b=paras(l.en).filter(x=>!FIG_RE.test(x.trim())),isF=x=>FIG_RE.test(x.trim());
+  if(a.filter(x=>!isF(x)).length===b.length){let k=0;return a.map(x=>isF(x)?lessonBody(x):lessonBody(x)+`<div class="enpar" lang="en">${lessonBody(b[k++])}</div>`).join("");}
   return lessonBody(l.body)+`<h3 class="enhead">English</h3><div class="enpar" lang="en">${lessonBody(l.en)}</div>`;}
 function renderLesson(){
   const l=lAll().find(x=>x.id===L.ids[L.i]);if(!l){L=null;return renderHome();}
@@ -1636,6 +1641,9 @@ async function idbPut(items){const db=await idb();return new Promise((ok,ng)=>{c
 async function idbGet(k){const db=await idb();return new Promise((ok,ng)=>{const r=db.transaction("pages").objectStore("pages").get(k);r.onsuccess=()=>ok(r.result);r.onerror=()=>ng(r.error);});}
 const b64blob=b=>{const s=atob(b),u=new Uint8Array(s.length);for(let i=0;i<s.length;i++)u[i]=s.charCodeAt(i);return new Blob([u],{type:"image/jpeg"});};
 async function takePages(d){
+  if(d.figs){const ent=Object.entries(d.figs);try{for(let i=0;i<ent.length;i+=20){busy("図・写真を保存しています…",Math.round(i/ent.length*100),`${i}/${ent.length}枚`);await idbPut(ent.slice(i,i+20).map(([k,b])=>[k,b64blob(b)]));await new Promise(r=>setTimeout(r,0));}}
+    catch(e){busyOff();toast("保存できませんでした（"+((e&&e.message)||"容量不足かもしれません")+"）");return;}
+    S.figCount=(S.figCount||0)+ent.length;save();if(!importing)busyOff();toast(`図・写真を${ent.length}枚保存しました${d.part?`（${d.part}）`:""}。解説の中に出ます`);render();return;}
   const book=String(d.book||"").trim(),ent=Object.entries(d.pages||{});if(!book||!ent.length){toast("ページの画像が入っていませんでした");return;}
   try{for(let i=0;i<ent.length;i+=20){busy(`「${book}」のページを保存しています…`,Math.round(i/ent.length*100),`${i}/${ent.length}ページ`);
       await idbPut(ent.slice(i,i+20).map(([pg,b])=>[book+"|"+pg,b64blob(b)]));await new Promise(r=>setTimeout(r,0));}
@@ -1651,7 +1659,7 @@ function lessonPages(l){const book=bookOf(l.set),idx=(S.pageIdx||{})[book];if(!i
 function pagesHTML(l){const ps=lessonPages(l);if(!ps.length)return"";const on=S.settings.showPages!==false,book=bookOf(l.set);
   return`<div class="bookpages"><button class="btn wide" data-act="l-pages">${on?"▼":"▶"} 本のページ（図・写真）を${on?"隠す":"見る"}　p.${ps[0]}${ps.length>1?`〜${ps[ps.length-1]}`:""}</button>
     ${on?`<div class="pgs">${ps.map(p=>`<figure><img data-pg="${esc(book+"|"+p)}" alt="p.${p}" loading="lazy"><figcaption>p.${p}（押すと大きく）</figcaption></figure>`).join("")}</div>`:""}</div>`;}
-function fillPages(){document.querySelectorAll("img[data-pg]:not([src])").forEach(async im=>{try{const b=await idbGet(im.dataset.pg);if(b)im.src=URL.createObjectURL(b);else im.alt="この画像はまだ取りこまれていません";}catch(e){im.alt="画像を読めませんでした";}});}
+function fillPages(){document.querySelectorAll("img[data-pg]:not([src])").forEach(async im=>{try{const b=await idbGet(im.dataset.pg);if(b)im.src=URL.createObjectURL(b);else{const fg=im.closest(".lfig");if(fg)fg.hidden=true;else im.alt="この画像はまだ取りこまれていません";}}catch(e){im.alt="画像を読めませんでした";}});}
 // 選んだファイルを1つずつ読みこむ（ページ画像のように、何個かまとめて選んでもOK）
 function readFile(f,label){return new Promise((ok,ng)=>{const t0=Date.now();let got=false;
   setTimeout(()=>{if(!got)busy(`「${f.name}」の読みこみに時間がかかっています…`,null,"ドライブから直接選ぶと遅いことがあります。止まったままなら、画面を閉じて、ファイルを一度スマホに「ダウンロード」してから選んでください。",true);},15000);
@@ -1663,6 +1671,7 @@ async function importFiles(fl){importing=fl.length>1;try{
   for(let i=0;i<fl.length;i++){const f=fl[i],label=fl.length>1?`${i+1}/${fl.length}　`:"";
     let txt;try{txt=await readFile(f,label);}catch(err){busyOff();toast(`「${f.name}」を読めませんでした（${(err&&err.message)||"不明"}）。一度スマホに保存してから選んでください`);continue;}
     if(!txt.trim()){toast(`「${f.name}」の中身が空でした`);continue;}
+    if(/^\s*\{"figpack"/.test(txt.slice(0,40))){try{await takePages(JSON.parse(txt));}catch(e){toast("図のファイルが壊れています");}continue;}
     busy(`${label}中身を確認しています…`,100,"もう少しです");await new Promise(r=>setTimeout(r,40));
     lastFile=f.name;try{await takeAny(txt);}catch(e){toast("取りこめませんでした："+((e&&e.message)||"不明"));}
     if(i<fl.length-1)await new Promise(r=>setTimeout(r,300));}
@@ -1671,7 +1680,7 @@ async function importFiles(fl){importing=fl.length>1;try{
   if(fl.length>1){ftr(`${fl.length}個のファイルを取りこみました`);const pi=S.pageIdx||{};toast(`${fl.length}個のファイルを取りこみました${Object.keys(pi).length?`（本のページ：${Object.entries(pi).map(([k,v])=>`${k} ${v.length}枚`).join("・")}）`:""}`);}
 }
 async function takeAny(text){ // 貼りつけた文：送るコードなら開いてから取りこむ
-  if(/^\s*\{"pagepack"/.test(String(text||"").slice(0,40))){let d;try{d=JSON.parse(text);}catch(e){toast("ページのファイルが壊れています");return;}return takePages(d);}
+  if(/^\s*\{"(pagepack|figpack)"/.test(String(text||"").slice(0,40))){let d;try{d=JSON.parse(text);}catch(e){toast("ページのファイルが壊れています");return;}return takePages(d);}
   const m=String(text||"").match(/CDRILL1:([A-Za-z0-9+\/=\s]+)/);
   if(m){try{text=await unpackText(m[1].replace(/\s+/g,""));}catch(e){toast("コードが読み取れませんでした。メッセージ全体をコピーしてください");return;}}
   aiTake(text);
