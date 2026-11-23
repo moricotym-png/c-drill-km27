@@ -113,6 +113,7 @@ mark{background:linear-gradient(transparent 58%,var(--hl) 58%);color:inherit;pad
 #pgzoom{position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:1000;overflow:auto;-webkit-overflow-scrolling:touch;touch-action:pinch-zoom pan-x pan-y}#pgzoom img{width:100%;display:block}#pgzoom p{color:#ddd;text-align:center;font-size:13px;padding:8px}
 @media(min-width:700px){.pgs{display:grid;grid-template-columns:1fr 1fr}}
 .fig-miss{border:1px dashed var(--line);border-radius:8px;padding:8px;margin:0}.lfig{margin:10px 0 14px;text-align:center}.lfig img{max-width:100%;border-radius:8px;border:1px solid var(--line);min-height:60px;background:var(--soft)}.lfig figcaption{font-size:12.5px;opacity:.75;margin-top:4px}
+.share-ready{border:1px solid var(--line);border-radius:12px;padding:12px;margin-top:10px}
 .opt.en{font-family:var(--f-word);font-weight:600;font-size:18px}
 .opt.is-ok{border-color:var(--ok);background:var(--ok-bg);color:var(--ok)}
 .opt.is-ng{border-color:var(--ng);background:var(--ng-bg);color:var(--ng)}
@@ -401,7 +402,7 @@ const SEED=[
 ];
 
 const KEY="c-drill-v1";
-const APP_VER="2026-11-23r"; // 画面を変えたら上げる（設定の一番下に表示。新しい版があれば自動で読みこみ直す）
+const APP_VER="2026-11-23s"; // 画面を変えたら上げる（設定の一番下に表示。新しい版があれば自動で読みこみ直す）
 const DAYS=[0,1,3,7,14,30,60];
 const LV=["未学習","Lv.1","Lv.2","Lv.3","Lv.4","Lv.5","定着"];
 const TYPES={en2ja:"英語を見て意味を選ぶ",ja2en:"意味を見て英語を選ぶ",cloze:"例文の空欄に入る語を選ぶ",listen:"発音を聞いて意味を選ぶ",spell:"つづりを書く（Lv.2から）",para:"ふつうの英語からネイティブの表現を選ぶ"};
@@ -1721,12 +1722,42 @@ function shareHTML(){
       return`<div class="sbook"><label class="sbook-h"><input type="checkbox" data-sharebook="${esc(book)}" ${all?"checked":""} ${some&&!all?'data-mixed="1"':""}>📚 ${esc(book)}<span class="note">　${w?w+"語":""}${w&&g?"・":""}${g?"文法"+g+"問":""}</span></label>
         <details><summary class="note">セットを選ぶ（${it.length}）</summary><div class="sbook-sets">${it.map(x=>`<label><input type="checkbox" data-share="${esc(x.key)}" data-sbook="${esc(book)}" ${shareSel.has(x.key)?"checked":""}>${esc(x.label)}<span class="note">　${x.n}${x.unit}</span></label>`).join("")}</div></details></div>`;}).join("")}</div>
     <p class="note" id="share-sum">${shareSumText()}</p>
-    <button class="btn primary" data-act="share-make" id="share-make" ${shareSel.size?"":"disabled"}>送るコードを作る</button>
+    <button class="btn primary" data-act="share-make" id="share-make" ${shareSel.size?"":"disabled"}>送るものを作る</button>
     <div id="share-res">${shareResHTML()}</div>
   </section>`;
 }
+let shareFiles=[],shareInfo=null;
+const shareName=k=>{const d=new Date();return`${k}単語ドリル_${d.getMonth()+1}月${d.getDate()}日.json`;};
+const blob64=b=>new Promise((ok,ng)=>{const r=new FileReader();r.onload=()=>ok(String(r.result).split(",")[1]||"");r.onerror=()=>ng(r.error);r.readAsDataURL(b);});
+// 送るものを作る：大きいときはコードを作らずファイルにする。解説の中の図・写真もいっしょに入れる
+async function makeShare(){
+  const sel=new Set(shareSel);if(!sel.size)return;busy("送るものを作っています…",null,"単語・問題・解説を集めています");await new Promise(r=>setTimeout(r,40));
+  try{
+    const ws=shareWords(sel),gs=shareGrammar(sel);
+    const uset=new Set([...sel].map(k=>{const n=k.replace(/^g:/,"");return bookOf(n)+"|"+unitOf(n);}));
+    const ls=lAll().filter(l=>uset.has(bookOf(l.set)+"|"+unitOf(l.set))).map(l=>({set:l.set,title:l.title,body:l.body,body_en:l.en||undefined,points:l.points,order:l.order}));
+    const json=JSON.stringify({set:"",share:true,words:ws,grammar:gs,lessons:ls,questions:[]});shareJson=json;
+    const keys=[...new Set(ls.flatMap(l=>[...String(l.body||"").matchAll(/\{\{fig:([^}]+?)(?:\|[^}|]*)?\}\}/g)].map(m=>m[1])))];
+    const figs={};let got=0;
+    for(let i=0;i<keys.length;i++){if(i%5===0)busy("図・写真を入れています…",Math.round(i/keys.length*100),`${i}/${keys.length}枚`);
+      try{const b=await idbGet(keys[i]);if(b){figs[keys[i]]=await blob64(b);got++;}}catch(e){}}
+    shareFiles=[new File([json],shareName("1_"),{type:"application/json"})];
+    let figBytes=0;if(got){const fj=JSON.stringify({figpack:1,book:"",part:"送られた図",figs});figBytes=fj.length;shareFiles.push(new File([fj],shareName("2_図写真_"),{type:"application/json"}));}
+    const nm=[...sel].map(n=>n.replace(/^g:/,"文法："));
+    shareInfo={w:ws.length,g:gs.length,l:ls.length,f:got,size:json.length+figBytes,names:nm};
+    shareMsg="";
+    if(json.length<9000&&!got){busy("送るコードを作っています…");const code=await packText(json);
+      shareMsg=`C単語ドリルの単語（${nm.length>2?nm.slice(0,2).join("、")+` ほか${nm.length-2}セット`:nm.join("、")}・${ws.length}語${gs.length?`・文法${gs.length}問`:""}）です。\nこのメッセージを長押しでコピーして、単語ドリルの「追加」→「② 貼りつけて取りこむ」で入れてください。\n${code}`;}
+  }catch(e){busyOff();toast("作れませんでした："+((e&&e.message)||"不明"));return;}
+  busyOff();const res=document.getElementById("share-res");if(res)res.innerHTML=shareResHTML();else render();
+  const el=document.getElementById("share-ready");if(el)el.scrollIntoView({behavior:"smooth",block:"center"});
+}
 function shareResHTML(){
-  if(!shareMsg)return"";const big=shareMsg.length>9000;
+  if(!shareInfo)return"";const si=shareInfo;
+  if(!shareMsg)return`<div id="share-ready" class="share-ready"><p><b>準備ができました</b></p>
+      <p class="note">${si.w}語${si.g?`・文法${si.g}問`:""}${si.l?`・解説${si.l}本`:""}${si.f?`・図・写真${si.f}枚`:""}（${fmtMB(si.size)}）</p>
+      <button class="btn primary wide" data-act="share-file">ファイルで送る（LINEなど）</button>
+      <p class="note">押すと送り先を選ぶ画面が出ます。LINEを選んで送ってください。${si.f?"ファイルは2つ（単語・解説と、図・写真）です。受け取った人は「追加」→「ファイルから取りこむ」で2つまとめて選びます。":"受け取った人は「追加」→「ファイルから取りこむ」で入れます。"}</p></div>`;const big=shareMsg.length>9000;
   return`<textarea id="share-out" rows="3" readonly>${esc(shareMsg)}</textarea>
       <p class="note">${shareMsg.length.toLocaleString()}文字${big?"。LINEのメッセージで送れる長さをこえているので、「ファイルで送る」を使ってください（受け取った人は「ファイルから取りこむ」で入れます）":"。多いときは「ファイルで送る」も使えます"}</p>
       <div class="row-btns">${big?"":`<button class="btn primary" data-act="share-send">LINEなどで送る</button><button class="btn" data-act="share-copy">コピー</button>`}<button class="btn${big?" primary":""}" data-act="share-file">ファイルで送る</button></div>`;
@@ -1737,7 +1768,7 @@ function shareRefresh(){
     const n=kids.filter(k=>k.checked).length;cb.checked=n===kids.length&&n>0;cb.indeterminate=n>0&&n<kids.length;});
   const sum=document.getElementById("share-sum");if(sum)sum.textContent=shareSumText();
   const mk=document.getElementById("share-make");if(mk)mk.disabled=!shareSel.size;
-  shareMsg="";const res=document.getElementById("share-res");if(res)res.innerHTML="";
+  shareMsg="";shareInfo=null;shareFiles=[];const res=document.getElementById("share-res");if(res)res.innerHTML="";
 }
 let lastFile="",ftrace="";
 function ftr(msg){ftrace=new Date().toTimeString().slice(0,8)+" "+msg;const el=document.getElementById("ftrace");if(el)el.textContent=ftrace;}
@@ -1904,19 +1935,11 @@ document.addEventListener("click",e=>{
     const fb=()=>{aiFallback=true;render();document.getElementById("ai-text").focus();toast("下の欄に長押しで貼りつけて、「この内容で取りこむ」を押してください");};
     try{navigator.clipboard.readText().then(t=>t&&t.trim()?takeAny(t):toast("コピーされた内容がありません"),fb);}catch(e){fb();}return;}
   if(a==="ai-take"){takeAny(document.getElementById("ai-text").value);return;}
-  if(a==="share-make"){const sel=new Set(shareSel),ws=shareWords(sel),gs=shareGrammar(sel);
-    const uset=new Set([...sel].map(k=>{const n=k.replace(/^g:/,"");return bookOf(n)+"|"+unitOf(n);}));
-    const ls=lAll().filter(l=>uset.has(bookOf(l.set)+"|"+unitOf(l.set))).map(l=>({set:l.set,title:l.title,body:l.body,body_en:l.en||undefined,points:l.points,order:l.order}));
-    const json=JSON.stringify({set:"",share:true,words:ws,grammar:gs,lessons:ls,questions:[]});shareJson=json;
-    packText(json).then(code=>{const names=[...sel];
-      const nm=names.map(n=>n.replace(/^g:/,"文法："));
-      shareMsg=`C単語ドリルの単語（${nm.length>2?nm.slice(0,2).join("、")+` ほか${nm.length-2}セット`:nm.join("、")}・${ws.length}語${gs.length?`・文法${gs.length}問`:""}）です。\nこのメッセージを長押しでコピーして、単語ドリルの「追加」→「② 貼りつけて取りこむ」を押してね。\n${code}`;
-      const res=document.getElementById("share-res");if(res)res.innerHTML=shareResHTML();else render();
-      const el=document.getElementById("share-out");if(el)el.scrollIntoView({behavior:"smooth",block:"center"});});return;}
-  if(a==="share-file"){const d=new Date(),name=`単語ドリル_${d.getMonth()+1}月${d.getDate()}日.json`;
-    const file=new File([shareJson],name,{type:"application/json"});
-    const dl=()=>{const u=URL.createObjectURL(file),l=document.createElement("a");l.href=u;l.download=name;document.body.appendChild(l);l.click();l.remove();setTimeout(()=>URL.revokeObjectURL(u),2000);toast("ファイルを保存しました。LINEでそのファイルを送ってください");};
-    try{if(navigator.canShare&&navigator.canShare({files:[file]}))navigator.share({files:[file],title:name}).catch(()=>{});else dl();}catch(e){dl();}return;}
+  if(a==="share-make"){makeShare();return;}
+  if(a==="share-file"){ // 作っておいたファイルをそのまま送る（押したその場で送らないとスマホが止めるため）
+    const fs=shareFiles.length?shareFiles:[new File([shareJson],shareName(""),{type:"application/json"})];
+    const dl=()=>{fs.forEach((file,i)=>setTimeout(()=>{const u=URL.createObjectURL(file),l=document.createElement("a");l.href=u;l.download=file.name;document.body.appendChild(l);l.click();l.remove();setTimeout(()=>URL.revokeObjectURL(u),4000);},i*800));toast("ファイルを保存しました。LINEでそのファイルを送ってください");};
+    try{if(navigator.canShare&&navigator.canShare({files:fs}))navigator.share({files:fs,title:fs[0].name}).catch(()=>{});else dl();}catch(e){dl();}return;}
   if(a==="share-send"){if(navigator.share){navigator.share({text:shareMsg}).catch(()=>{});}else{location.href="https://line.me/R/share?text="+encodeURIComponent(shareMsg);}return;}
   if(a==="share-copy"){const ta=document.getElementById("share-out");const sel=()=>{ta.focus();ta.select();toast("選択しました。長押しでコピーしてください");};
     try{navigator.clipboard.writeText(shareMsg).then(()=>toast("コピーしました。LINEに貼りつけて送ってください"),sel);}catch(e){sel();}return;}
