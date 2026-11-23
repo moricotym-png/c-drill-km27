@@ -100,6 +100,10 @@ mark{background:linear-gradient(transparent 58%,var(--hl) 58%);color:inherit;pad
 .langsw{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:4px 0 10px}.langsw button:not(.say){border:1px solid var(--line);background:var(--card);color:inherit;border-radius:999px;padding:5px 12px;font-size:13px}
 .langsw button.on{background:var(--ink,#2b2f8a);color:#fff;border-color:transparent}.enpar{color:var(--sub,#555);border-left:3px solid var(--line);padding-left:10px;margin:-4px 0 12px}.enpar h3{font-size:15px}
 .lis-script{font-family:var(--f-word,inherit);font-size:15px;line-height:1.6;background:var(--bg2,rgba(0,0,0,.03));border-radius:10px;padding:10px 12px;margin-top:8px}
+#busy{position:fixed;inset:0;background:rgba(20,22,40,.45);display:flex;align-items:center;justify-content:center;z-index:999;padding:16px}#busy[hidden]{display:none}
+.busy-card{background:var(--card,#fff);color:inherit;border-radius:16px;padding:22px 20px;width:min(320px,100%);text-align:center;box-shadow:0 10px 30px rgba(0,0,0,.25)}
+.busy-msg{font-weight:700;margin:10px 0 12px;word-break:break-all}.busy-prog{height:10px}
+.spin{width:34px;height:34px;margin:0 auto;border:4px solid var(--line,#ddd);border-top-color:var(--ink,#2b2f8a);border-radius:50%;animation:spin 1s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
 .opt.en{font-family:var(--f-word);font-weight:600;font-size:18px}
 .opt.is-ok{border-color:var(--ok);background:var(--ok-bg);color:var(--ok)}
 .opt.is-ng{border-color:var(--ng);background:var(--ng-bg);color:var(--ng)}
@@ -388,7 +392,7 @@ const SEED=[
 ];
 
 const KEY="c-drill-v1";
-const APP_VER="2026-11-23e"; // 画面を変えたら上げる（設定の一番下に表示。新しい版があれば自動で読みこみ直す）
+const APP_VER="2026-11-23f"; // 画面を変えたら上げる（設定の一番下に表示。新しい版があれば自動で読みこみ直す）
 const DAYS=[0,1,3,7,14,30,60];
 const LV=["未学習","Lv.1","Lv.2","Lv.3","Lv.4","Lv.5","定着"];
 const TYPES={en2ja:"英語を見て意味を選ぶ",ja2en:"意味を見て英語を選ぶ",cloze:"例文の空欄に入る語を選ぶ",listen:"発音を聞いて意味を選ぶ",spell:"つづりを書く（Lv.2から）",para:"ふつうの英語からネイティブの表現を選ぶ"};
@@ -614,6 +618,12 @@ function hlEx(w){const c=cloze(w);return c?esc(c.before)+"<mark>"+esc(c.hit)+"</
 /* ---------- views ---------- */
 let view="home",Q=null,draft="",preview=null,listQ="",listSet="",openId=null,confirmDel=null,backup="",confirmRestore=false,toastT=null;
 
+/* 読みこみ中の表示（ファイルの読みこみ・追加のあいだ、画面の真ん中に進み具合を出す） */
+function busy(msg,pct,sub){let el=document.getElementById("busy");
+  if(!el){el=document.createElement("div");el.id="busy";el.setAttribute("role","status");document.body.appendChild(el);}
+  el.innerHTML=`<div class="busy-card"><div class="spin" aria-hidden="true"></div><p class="busy-msg">${esc(msg)}</p>${pct!=null?`<div class="prog busy-prog"><i style="width:${Math.max(3,Math.min(100,pct))}%"></i></div><p class="note">${pct}%${sub?`　${esc(sub)}`:""}</p>`:sub?`<p class="note">${esc(sub)}</p>`:""}</div>`;el.hidden=false;}
+function busyOff(){const el=document.getElementById("busy");if(el)el.hidden=true;}
+const fmtMB=n=>n>=1048576?(n/1048576).toFixed(1)+"MB":Math.max(1,Math.round(n/1024))+"KB";
 function toast(msg){const t=document.getElementById("toast");t.textContent=msg;t.hidden=false;clearTimeout(toastT);toastT=setTimeout(()=>{t.hidden=true},2600);}
 
 function render(){
@@ -1819,7 +1829,8 @@ document.addEventListener("click",e=>{
   if(a==="share-send"){if(navigator.share){navigator.share({text:shareMsg}).catch(()=>{});}else{location.href="https://line.me/R/share?text="+encodeURIComponent(shareMsg);}return;}
   if(a==="share-copy"){const ta=document.getElementById("share-out");const sel=()=>{ta.focus();ta.select();toast("選択しました。長押しでコピーしてください");};
     try{navigator.clipboard.writeText(shareMsg).then(()=>toast("コピーしました。LINEに貼りつけて送ってください"),sel);}catch(e){sel();}return;}
-  if(a==="commit-big"){
+  if(a==="commit-big"&&!b.__go){b.__go=1;busy("単語帳に追加しています…",null,`${preview.items.length}語`);setTimeout(()=>{b.click();},60);return;}
+  if(a==="commit-big"){setTimeout(busyOff,0);
     const up=x=>/^[a-z]+\d+$/i.test(x)?x.toUpperCase():x;
     const top=up(document.getElementById("setname").value.trim()||preview.set||"");
     const byW=new Map(S.words.map(w=>[norm(w.w),w])),used=new Set();let added=0,upd=0;
@@ -1885,10 +1896,12 @@ document.addEventListener("change",e=>{
   if(t.dataset&&t.dataset.sharebook!==undefined){document.querySelectorAll("[data-share]").forEach(k=>{if(k.dataset.sbook===t.dataset.sharebook){k.checked=t.checked;if(t.checked)shareSel.add(k.dataset.share);else shareSel.delete(k.dataset.share);}});shareRefresh();return;}
   if(t.dataset&&t.dataset.book!==undefined){S.settings.newOff=S.settings.newOff||{};if(t.checked)delete S.settings.newOff[t.dataset.book];else S.settings.newOff[t.dataset.book]=true;save();return;}
   if(t.dataset&&t.dataset.aifile!==undefined){const f=t.files&&t.files[0];if(!f){toast("ファイルが選ばれていません");return;}
-    toast(`${f.name} を読みこみ中…`);
-    const done=txt=>{t.value="";if(!txt||!txt.trim()){toast("ファイルの中身が空でした");return;}lastFile=f.name;takeAny(txt);setTimeout(()=>{lastFile="";},3000);};
-    const fail=err=>{t.value="";toast("ファイルを読めませんでした（"+((err&&err.message)||"不明")+"）。一度スマホに保存してから選んでください");};
-    try{const r=new FileReader();r.onload=()=>done(String(r.result||""));r.onerror=()=>fail(r.error);r.readAsText(f,"utf-8");}catch(err){fail(err);}
+    const t0=Date.now();busy(`「${f.name}」を読みこみ中…`,0,`${fmtMB(f.size)}`);
+    const done=txt=>{t.value="";if(!txt||!txt.trim()){busyOff();toast("ファイルの中身が空でした");return;}
+      busy("中身を確認しています…",100,"もう少しです");
+      setTimeout(async()=>{lastFile=f.name;try{await takeAny(txt);}finally{busyOff();}setTimeout(()=>{lastFile="";},3000);},40);};
+    const fail=err=>{t.value="";busyOff();toast("ファイルを読めませんでした（"+((err&&err.message)||"不明")+"）。一度スマホに保存してから選んでください");};
+    try{const r=new FileReader();r.onprogress=e=>{if(e.lengthComputable&&e.total){const pc=Math.round(e.loaded/e.total*100),el=(Date.now()-t0)/1000,left=pc>3?Math.round(el*(100-pc)/pc):null;busy(`「${f.name}」を読みこみ中…`,pc,`${fmtMB(e.loaded)} / ${fmtMB(e.total)}${left!=null&&left>0?`・あと約${left}秒`:""}`);}};r.onload=()=>done(String(r.result||""));r.onerror=()=>fail(r.error);r.readAsText(f,"utf-8");}catch(err){fail(err);}
     return;}
   if(t.dataset&&t.dataset.ocr){const fs=[...t.files];t.value="";runOCR(fs,t.dataset.ocr);return;}
   if(t.dataset&&t.dataset.type){
