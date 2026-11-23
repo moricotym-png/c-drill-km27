@@ -393,7 +393,7 @@ const SEED=[
 ];
 
 const KEY="c-drill-v1";
-const APP_VER="2026-11-23i"; // 画面を変えたら上げる（設定の一番下に表示。新しい版があれば自動で読みこみ直す）
+const APP_VER="2026-11-23j"; // 画面を変えたら上げる（設定の一番下に表示。新しい版があれば自動で読みこみ直す）
 const DAYS=[0,1,3,7,14,30,60];
 const LV=["未学習","Lv.1","Lv.2","Lv.3","Lv.4","Lv.5","定着"];
 const TYPES={en2ja:"英語を見て意味を選ぶ",ja2en:"意味を見て英語を選ぶ",cloze:"例文の空欄に入る語を選ぶ",listen:"発音を聞いて意味を選ぶ",spell:"つづりを書く（Lv.2から）",para:"ふつうの英語からネイティブの表現を選ぶ"};
@@ -1929,7 +1929,7 @@ document.addEventListener("keydown",e=>{
 });
 setInterval(()=>{if(view==="home"&&!Q&&soonAll().length)render();},30000);
 // 成長ログが単語を足していることがあるので、開き直したときは保存データを読み直す
-document.addEventListener("visibilitychange",()=>{if(document.hidden){tick();saveQ();return;}if(!Q){if(!preview)load();render();}});
+document.addEventListener("visibilitychange",()=>{if(document.hidden){tick();saveQ();return;}if(Date.now()-pickT<180000)return;/* ファイルを選んで戻ったときは描き直さない（描き直すと、選んだファイルが届く前にボタンが作り直されて消える） */if(!Q){if(!preview)load();render();}});
 window.addEventListener("pagehide",()=>{tick();saveQ();});
 
 // 新しい版が公開されていたら、そのまま読みこみ直す（スマホが古い版を覚えていても切り替わるように）
