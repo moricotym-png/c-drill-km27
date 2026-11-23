@@ -401,7 +401,7 @@ const SEED=[
 ];
 
 const KEY="c-drill-v1";
-const APP_VER="2026-11-23n"; // 画面を変えたら上げる（設定の一番下に表示。新しい版があれば自動で読みこみ直す）
+const APP_VER="2026-11-23o"; // 画面を変えたら上げる（設定の一番下に表示。新しい版があれば自動で読みこみ直す）
 const DAYS=[0,1,3,7,14,30,60];
 const LV=["未学習","Lv.1","Lv.2","Lv.3","Lv.4","Lv.5","定着"];
 const TYPES={en2ja:"英語を見て意味を選ぶ",ja2en:"意味を見て英語を選ぶ",cloze:"例文の空欄に入る語を選ぶ",listen:"発音を聞いて意味を選ぶ",spell:"つづりを書く（Lv.2から）",para:"ふつうの英語からネイティブの表現を選ぶ"};
@@ -938,8 +938,8 @@ function linkify(text){
 }
 const fmtInline=x=>linkify(x).replace(/\*\*(.+?)\*\*/g,"<b>$1</b>");
 // 本文の中の図・写真：{{fig:キー|説明}} の行に、取りこんだ画像を差しこむ
-const FIG_RE=/^\s*\{\{fig:([^}|]+)(?:\|([^}]*))?\}\}\s*$/;
-const figSplit=t=>String(t||"").split("\n").map(x=>FIG_RE.test(x)?"\n"+x+"\n":x).join("\n");
+const FIG_RE=/^\s*\{\{fig:([^}]+?)(?:\|([^}|]*))?\}\}\s*$/; // キーに「本|f123_1」の | が入るので、説明は最後の | のあと
+const figSplit=t=>String(t||"").split("\n").map(x=>FIG_RE.test(x)?"\n"+x+"\n":/^#{1,3}\s/.test(x)?"\n"+x:x).join("\n"); // 図と見出しは段落を分ける
 function lessonBody(t){
   return figSplit(t).split(/\n\s*\n/).map(par=>{const lines=par.split("\n").filter(x=>x.trim());if(!lines.length)return"";
     const fm=lines.length===1&&lines[0].match(FIG_RE);if(fm)return`<figure class="lfig"><img data-pg="${esc(fm[1])}" alt="${esc(fm[2]||"図")}"><figcaption>${esc(fm[2]||"")}</figcaption></figure>`;
@@ -1655,7 +1655,7 @@ async function takePages(d){
 function lessonPages(l){const book=bookOf(l.set),idx=(S.pageIdx||{})[book];if(!idx||!idx.length)return[];
   const st=Number(l.order);if(!st||!idx.includes(st))return[];
   const nexts=lAll().filter(x=>bookOf(x.set)===book&&Number(x.order)>st).map(x=>Number(x.order));const nx=nexts.length?Math.min(...nexts):st+2;
-  const out=[];for(let p=st;p<Math.min(nx,st+4);p++)if(idx.includes(p))out.push(p);if(!out.length)out.push(st);return out;}
+  const out=[];for(let p=st;p<Math.min(nx,st+8);p++)if(idx.includes(p))out.push(p);if(!out.length)out.push(st);return out;}
 function pagesHTML(l){const ps=lessonPages(l);if(!ps.length)return"";const on=S.settings.showPages!==false,book=bookOf(l.set);
   return`<div class="bookpages"><button class="btn wide" data-act="l-pages">${on?"▼":"▶"} 本のページ（図・写真）を${on?"隠す":"見る"}　p.${ps[0]}${ps.length>1?`〜${ps[ps.length-1]}`:""}</button>
     ${on?`<div class="pgs">${ps.map(p=>`<figure><img data-pg="${esc(book+"|"+p)}" alt="p.${p}" loading="lazy"><figcaption>p.${p}（押すと大きく）</figcaption></figure>`).join("")}</div>`:""}</div>`;}
