@@ -401,7 +401,7 @@ const SEED=[
 ];
 
 const KEY="c-drill-v1";
-const APP_VER="2026-11-23q"; // 画面を変えたら上げる（設定の一番下に表示。新しい版があれば自動で読みこみ直す）
+const APP_VER="2026-11-23r"; // 画面を変えたら上げる（設定の一番下に表示。新しい版があれば自動で読みこみ直す）
 const DAYS=[0,1,3,7,14,30,60];
 const LV=["未学習","Lv.1","Lv.2","Lv.3","Lv.4","Lv.5","定着"];
 const TYPES={en2ja:"英語を見て意味を選ぶ",ja2en:"意味を見て英語を選ぶ",cloze:"例文の空欄に入る語を選ぶ",listen:"発音を聞いて意味を選ぶ",spell:"つづりを書く（Lv.2から）",para:"ふつうの英語からネイティブの表現を選ぶ"};
@@ -1643,7 +1643,10 @@ const b64blob=b=>{const s=atob(b),u=new Uint8Array(s.length);for(let i=0;i<s.len
 async function takePages(d){
   if(d.figs){const ent=Object.entries(d.figs);try{for(let i=0;i<ent.length;i+=20){busy("図・写真を保存しています…",Math.round(i/ent.length*100),`${i}/${ent.length}枚`);await idbPut(ent.slice(i,i+20).map(([k,b])=>[k,b64blob(b)]));await new Promise(r=>setTimeout(r,0));}}
     catch(e){busyOff();toast("保存できませんでした（"+((e&&e.message)||"容量不足かもしれません")+"）");return;}
-    S.figCount=(S.figCount||0)+ent.length;save();if(!importing)busyOff();toast(`図・写真を${ent.length}枚保存しました${d.part?`（${d.part}）`:""}。解説の中に出ます`);render();return;}
+    let nl=0;if(Array.isArray(d.lessons)&&d.lessons.length){const str=v=>v==null?"":String(v).trim(); // 図の入った解説の本文も一緒に新しくする
+      const ls=d.lessons.filter(l=>l&&(l.title||l.body)).map((l,k)=>({set:str(l.set),title:str(l.title),body:str(l.body),en:str(l.body_en||l.en),points:Array.isArray(l.points)?l.points.map(str).filter(Boolean):[],order:Number(l.order)||k}));
+      nl=mergeLessons(ls,String(d.book||"").trim()).upd+0;}
+    S.figCount=(S.figCount||0)+ent.length;save();if(!importing)busyOff();toast(`図・写真を${ent.length}枚保存しました${d.part?`（${d.part}）`:""}${nl?`・解説${nl}本に入れました`:""}。解説の中に出ます`);render();return;}
   const book=String(d.book||"").trim(),ent=Object.entries(d.pages||{});if(!book||!ent.length){toast("ページの画像が入っていませんでした");return;}
   try{for(let i=0;i<ent.length;i+=20){busy(`「${book}」のページを保存しています…`,Math.round(i/ent.length*100),`${i}/${ent.length}ページ`);
       await idbPut(ent.slice(i,i+20).map(([pg,b])=>[book+"|"+pg,b64blob(b)]));await new Promise(r=>setTimeout(r,0));}
