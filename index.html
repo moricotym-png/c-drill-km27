@@ -400,7 +400,7 @@ const SEED=[
 ];
 
 const KEY="c-drill-v1";
-const APP_VER="2026-11-23l"; // 画面を変えたら上げる（設定の一番下に表示。新しい版があれば自動で読みこみ直す）
+const APP_VER="2026-11-23m"; // 画面を変えたら上げる（設定の一番下に表示。新しい版があれば自動で読みこみ直す）
 const DAYS=[0,1,3,7,14,30,60];
 const LV=["未学習","Lv.1","Lv.2","Lv.3","Lv.4","Lv.5","定着"];
 const TYPES={en2ja:"英語を見て意味を選ぶ",ja2en:"意味を見て英語を選ぶ",cloze:"例文の空欄に入る語を選ぶ",listen:"発音を聞いて意味を選ぶ",spell:"つづりを書く（Lv.2から）",para:"ふつうの英語からネイティブの表現を選ぶ"};
@@ -1640,7 +1640,7 @@ async function takePages(d){
   try{for(let i=0;i<ent.length;i+=20){busy(`「${book}」のページを保存しています…`,Math.round(i/ent.length*100),`${i}/${ent.length}ページ`);
       await idbPut(ent.slice(i,i+20).map(([pg,b])=>[book+"|"+pg,b64blob(b)]));await new Promise(r=>setTimeout(r,0));}
   }catch(e){busyOff();toast("保存できませんでした（"+((e&&e.message)||"容量不足かもしれません")+"）");return;}
-  S.pageIdx=S.pageIdx||{};const set=new Set(S.pageIdx[book]||[]);ent.forEach(([pg])=>set.add(Number(pg)));S.pageIdx[book]=[...set].sort((a,b)=>a-b);save();busyOff();
+  S.pageIdx=S.pageIdx||{};const set=new Set(S.pageIdx[book]||[]);ent.forEach(([pg])=>set.add(Number(pg)));S.pageIdx[book]=[...set].sort((a,b)=>a-b);save();if(!importing)busyOff();
   const ns=ent.map(([pg])=>Number(pg));toast(`${book}の本のページを${ent.length}枚保存しました（p.${Math.min(...ns)}〜${Math.max(...ns)}${d.part?`・${d.part}`:""}）。解説で見られます`);render();
 }
 // この解説が本のどのページか：order（始まりのページ）から、同じ本の次の解説の手前まで（最大4ページ）
@@ -1652,6 +1652,24 @@ function pagesHTML(l){const ps=lessonPages(l);if(!ps.length)return"";const on=S.
   return`<div class="bookpages"><button class="btn wide" data-act="l-pages">${on?"▼":"▶"} 本のページ（図・写真）を${on?"隠す":"見る"}　p.${ps[0]}${ps.length>1?`〜${ps[ps.length-1]}`:""}</button>
     ${on?`<div class="pgs">${ps.map(p=>`<figure><img data-pg="${esc(book+"|"+p)}" alt="p.${p}" loading="lazy"><figcaption>p.${p}（押すと大きく）</figcaption></figure>`).join("")}</div>`:""}</div>`;}
 function fillPages(){document.querySelectorAll("img[data-pg]:not([src])").forEach(async im=>{try{const b=await idbGet(im.dataset.pg);if(b)im.src=URL.createObjectURL(b);else im.alt="この画像はまだ取りこまれていません";}catch(e){im.alt="画像を読めませんでした";}});}
+// 選んだファイルを1つずつ読みこむ（ページ画像のように、何個かまとめて選んでもOK）
+function readFile(f,label){return new Promise((ok,ng)=>{const t0=Date.now();let got=false;
+  setTimeout(()=>{if(!got)busy(`「${f.name}」の読みこみに時間がかかっています…`,null,"ドライブから直接選ぶと遅いことがあります。止まったままなら、画面を閉じて、ファイルを一度スマホに「ダウンロード」してから選んでください。",true);},15000);
+  try{const r=new FileReader();r.onprogress=e=>{if(e.lengthComputable&&e.total){const pc=Math.round(e.loaded/e.total*100),el=(Date.now()-t0)/1000,left=pc>3?Math.round(el*(100-pc)/pc):null;busy(`${label}「${f.name}」を読みこみ中…`,pc,`${fmtMB(e.loaded)} / ${fmtMB(e.total)}${left!=null&&left>0?`・あと約${left}秒`:""}`);}};
+    r.onload=()=>{got=true;ok(String(r.result||""));};r.onerror=()=>{got=true;ng(r.error);};busy(`${label}「${f.name}」を読みこみ中…`,0,fmtMB(f.size));r.readAsText(f,"utf-8");}catch(e){got=true;ng(e);}});}
+let importing=false;
+async function importFiles(fl){importing=fl.length>1;try{
+  fl.sort((a,b)=>a.name.localeCompare(b.name,"ja",{numeric:true}));
+  for(let i=0;i<fl.length;i++){const f=fl[i],label=fl.length>1?`${i+1}/${fl.length}　`:"";
+    let txt;try{txt=await readFile(f,label);}catch(err){busyOff();toast(`「${f.name}」を読めませんでした（${(err&&err.message)||"不明"}）。一度スマホに保存してから選んでください`);continue;}
+    if(!txt.trim()){toast(`「${f.name}」の中身が空でした`);continue;}
+    busy(`${label}中身を確認しています…`,100,"もう少しです");await new Promise(r=>setTimeout(r,40));
+    lastFile=f.name;try{await takeAny(txt);}catch(e){toast("取りこめませんでした："+((e&&e.message)||"不明"));}
+    if(i<fl.length-1)await new Promise(r=>setTimeout(r,300));}
+  }finally{importing=false;}
+  busyOff();setTimeout(()=>{lastFile="";},3000);
+  if(fl.length>1){ftr(`${fl.length}個のファイルを取りこみました`);const pi=S.pageIdx||{};toast(`${fl.length}個のファイルを取りこみました${Object.keys(pi).length?`（本のページ：${Object.entries(pi).map(([k,v])=>`${k} ${v.length}枚`).join("・")}）`:""}`);}
+}
 async function takeAny(text){ // 貼りつけた文：送るコードなら開いてから取りこむ
   if(/^\s*\{"pagepack"/.test(String(text||"").slice(0,40))){let d;try{d=JSON.parse(text);}catch(e){toast("ページのファイルが壊れています");return;}return takePages(d);}
   const m=String(text||"").match(/CDRILL1:([A-Za-z0-9+\/=\s]+)/);
@@ -1732,8 +1750,8 @@ function aiCardHTML(){
       <li>ここに戻って「② 貼りつけて取りこむ」を押す</li></ol>
     <button class="btn wide" data-act="ai-copy">① 頼む文章をコピー</button>
     <button class="btn primary wide" data-act="ai-paste">② 貼りつけて取りこむ</button>
-    <label class="btn wide photo"><input type="file" data-aifile>ファイルから取りこむ</label>
-    <label class="btn wide photo alt-file"><input type="file" data-aifile accept="application/json,.json,text/plain,.txt">ファイルから取りこむ（うまくいかないとき）</label><p class="note" id="ftrace">${esc(ftrace)}</p>
+    <label class="btn wide photo"><input type="file" data-aifile multiple>ファイルから取りこむ</label>
+    <label class="btn wide photo alt-file"><input type="file" data-aifile multiple accept="application/json,.json,text/plain,.txt">ファイルから取りこむ（うまくいかないとき）</label><p class="note" id="ftrace">${esc(ftrace)}</p>
     <details${aiFallback?" open":""}><summary class="note">うまくコピー・貼りつけできないとき</summary>
       <textarea id="ai-text" rows="5" placeholder="ここに長押しで貼りつけ"></textarea>
       <button class="btn wide" data-act="ai-take">この内容で取りこむ</button></details>
@@ -1947,15 +1965,9 @@ document.addEventListener("change",e=>{
   if(t.dataset&&t.dataset.share!==undefined){if(t.checked)shareSel.add(t.dataset.share);else shareSel.delete(t.dataset.share);shareRefresh();return;}
   if(t.dataset&&t.dataset.sharebook!==undefined){document.querySelectorAll("[data-share]").forEach(k=>{if(k.dataset.sbook===t.dataset.sharebook){k.checked=t.checked;if(t.checked)shareSel.add(k.dataset.share);else shareSel.delete(k.dataset.share);}});shareRefresh();return;}
   if(t.dataset&&t.dataset.book!==undefined){S.settings.newOff=S.settings.newOff||{};if(t.checked)delete S.settings.newOff[t.dataset.book];else S.settings.newOff[t.dataset.book]=true;save();return;}
-  if(t.dataset&&t.dataset.aifile!==undefined){window.__pickWait=0;const f=t.files&&t.files[0];ftr(f?`ファイルが届きました：${f.name}（${fmtMB(f.size)}）`:"ファイルが届きませんでした");if(!f){toast("ファイルが選ばれていません");return;}
-    const t0=Date.now();let got=false;busy(`「${f.name}」を読みこみ中…`,0,`${fmtMB(f.size)}`);
-    setTimeout(()=>{if(!got){busy(`「${f.name}」の読みこみに時間がかかっています…`,null,"ドライブから直接選ぶと遅いことがあります。止まったままなら、画面を閉じて、ファイルを一度スマホに「ダウンロード」してから選んでください。",true);}},15000);
-    const done=txt=>{t.value="";if(!txt||!txt.trim()){busyOff();toast("ファイルの中身が空でした");return;}
-      busy("中身を確認しています…",100,"もう少しです");
-      setTimeout(async()=>{lastFile=f.name;try{await takeAny(txt);}finally{busyOff();}setTimeout(()=>{lastFile="";},3000);},40);};
-    const fail=err=>{t.value="";busyOff();toast("ファイルを読めませんでした（"+((err&&err.message)||"不明")+"）。一度スマホに保存してから選んでください");};
-    try{const r=new FileReader();r.onprogress=e=>{if(e.lengthComputable&&e.total){const pc=Math.round(e.loaded/e.total*100),el=(Date.now()-t0)/1000,left=pc>3?Math.round(el*(100-pc)/pc):null;busy(`「${f.name}」を読みこみ中…`,pc,`${fmtMB(e.loaded)} / ${fmtMB(e.total)}${left!=null&&left>0?`・あと約${left}秒`:""}`);}};r.onload=()=>{got=true;done(String(r.result||""));};r.onerror=()=>{got=true;fail(r.error);};r.readAsText(f,"utf-8");}catch(err){fail(err);}
-    return;}
+  if(t.dataset&&t.dataset.aifile!==undefined){window.__pickWait=0;const fl=[...(t.files||[])];t.value="";
+    ftr(fl.length?`ファイルが届きました：${fl.length>1?fl.length+"個":fl[0].name}（${fmtMB(fl.reduce((a,f)=>a+f.size,0))}）`:"ファイルが届きませんでした");if(!fl.length){toast("ファイルが選ばれていません");return;}
+    importFiles(fl);return;}
   if(t.dataset&&t.dataset.ocr){const fs=[...t.files];t.value="";runOCR(fs,t.dataset.ocr);return;}
   if(t.dataset&&t.dataset.type){
     S.settings.types[t.dataset.type]=t.checked;
