@@ -392,7 +392,7 @@ const SEED=[
 ];
 
 const KEY="c-drill-v1";
-const APP_VER="2026-11-23f"; // 画面を変えたら上げる（設定の一番下に表示。新しい版があれば自動で読みこみ直す）
+const APP_VER="2026-11-23g"; // 画面を変えたら上げる（設定の一番下に表示。新しい版があれば自動で読みこみ直す）
 const DAYS=[0,1,3,7,14,30,60];
 const LV=["未学習","Lv.1","Lv.2","Lv.3","Lv.4","Lv.5","定着"];
 const TYPES={en2ja:"英語を見て意味を選ぶ",ja2en:"意味を見て英語を選ぶ",cloze:"例文の空欄に入る語を選ぶ",listen:"発音を聞いて意味を選ぶ",spell:"つづりを書く（Lv.2から）",para:"ふつうの英語からネイティブの表現を選ぶ"};
@@ -619,9 +619,9 @@ function hlEx(w){const c=cloze(w);return c?esc(c.before)+"<mark>"+esc(c.hit)+"</
 let view="home",Q=null,draft="",preview=null,listQ="",listSet="",openId=null,confirmDel=null,backup="",confirmRestore=false,toastT=null;
 
 /* 読みこみ中の表示（ファイルの読みこみ・追加のあいだ、画面の真ん中に進み具合を出す） */
-function busy(msg,pct,sub){let el=document.getElementById("busy");
+function busy(msg,pct,sub,closable){let el=document.getElementById("busy");
   if(!el){el=document.createElement("div");el.id="busy";el.setAttribute("role","status");document.body.appendChild(el);}
-  el.innerHTML=`<div class="busy-card"><div class="spin" aria-hidden="true"></div><p class="busy-msg">${esc(msg)}</p>${pct!=null?`<div class="prog busy-prog"><i style="width:${Math.max(3,Math.min(100,pct))}%"></i></div><p class="note">${pct}%${sub?`　${esc(sub)}`:""}</p>`:sub?`<p class="note">${esc(sub)}</p>`:""}</div>`;el.hidden=false;}
+  el.innerHTML=`<div class="busy-card"><div class="spin" aria-hidden="true"></div><p class="busy-msg">${esc(msg)}</p>${pct!=null?`<div class="prog busy-prog"><i style="width:${Math.max(3,Math.min(100,pct))}%"></i></div><p class="note">${pct}%${sub?`　${esc(sub)}`:""}</p>`:sub?`<p class="note">${esc(sub)}</p>`:""}${closable?`<button class="btn wide" onclick="busyOff()">閉じる</button>`:""}</div>`;el.hidden=false;}
 function busyOff(){const el=document.getElementById("busy");if(el)el.hidden=true;}
 const fmtMB=n=>n>=1048576?(n/1048576).toFixed(1)+"MB":Math.max(1,Math.round(n/1024))+"KB";
 function toast(msg){const t=document.getElementById("toast");t.textContent=msg;t.hidden=false;clearTimeout(toastT);toastT=setTimeout(()=>{t.hidden=true},2600);}
@@ -1747,6 +1747,8 @@ function renderSettings(){
 
 /* ---------- events ---------- */
 document.addEventListener("click",e=>{
+  const fi=e.target&&e.target.closest&&e.target.closest("label")&&e.target.closest("label").querySelector("input[data-aifile]");
+  if(fi||(e.target&&e.target.matches&&e.target.matches("input[data-aifile]"))){(fi||e.target).value="";} // 同じファイルをもう一度選んでも読みこむように
   const b=e.target.closest("[data-act]");if(!b)return;
   const a=b.dataset.act;
   if(a==="tab"){view=b.dataset.v;confirmDel=null;confirmRestore=false;render();window.scrollTo(0,0);return;}
@@ -1896,12 +1898,13 @@ document.addEventListener("change",e=>{
   if(t.dataset&&t.dataset.sharebook!==undefined){document.querySelectorAll("[data-share]").forEach(k=>{if(k.dataset.sbook===t.dataset.sharebook){k.checked=t.checked;if(t.checked)shareSel.add(k.dataset.share);else shareSel.delete(k.dataset.share);}});shareRefresh();return;}
   if(t.dataset&&t.dataset.book!==undefined){S.settings.newOff=S.settings.newOff||{};if(t.checked)delete S.settings.newOff[t.dataset.book];else S.settings.newOff[t.dataset.book]=true;save();return;}
   if(t.dataset&&t.dataset.aifile!==undefined){const f=t.files&&t.files[0];if(!f){toast("ファイルが選ばれていません");return;}
-    const t0=Date.now();busy(`「${f.name}」を読みこみ中…`,0,`${fmtMB(f.size)}`);
+    const t0=Date.now();let got=false;busy(`「${f.name}」を読みこみ中…`,0,`${fmtMB(f.size)}`);
+    setTimeout(()=>{if(!got){busy(`「${f.name}」の読みこみに時間がかかっています…`,null,"ドライブから直接選ぶと遅いことがあります。止まったままなら、画面を閉じて、ファイルを一度スマホに「ダウンロード」してから選んでください。",true);}},15000);
     const done=txt=>{t.value="";if(!txt||!txt.trim()){busyOff();toast("ファイルの中身が空でした");return;}
       busy("中身を確認しています…",100,"もう少しです");
       setTimeout(async()=>{lastFile=f.name;try{await takeAny(txt);}finally{busyOff();}setTimeout(()=>{lastFile="";},3000);},40);};
     const fail=err=>{t.value="";busyOff();toast("ファイルを読めませんでした（"+((err&&err.message)||"不明")+"）。一度スマホに保存してから選んでください");};
-    try{const r=new FileReader();r.onprogress=e=>{if(e.lengthComputable&&e.total){const pc=Math.round(e.loaded/e.total*100),el=(Date.now()-t0)/1000,left=pc>3?Math.round(el*(100-pc)/pc):null;busy(`「${f.name}」を読みこみ中…`,pc,`${fmtMB(e.loaded)} / ${fmtMB(e.total)}${left!=null&&left>0?`・あと約${left}秒`:""}`);}};r.onload=()=>done(String(r.result||""));r.onerror=()=>fail(r.error);r.readAsText(f,"utf-8");}catch(err){fail(err);}
+    try{const r=new FileReader();r.onprogress=e=>{if(e.lengthComputable&&e.total){const pc=Math.round(e.loaded/e.total*100),el=(Date.now()-t0)/1000,left=pc>3?Math.round(el*(100-pc)/pc):null;busy(`「${f.name}」を読みこみ中…`,pc,`${fmtMB(e.loaded)} / ${fmtMB(e.total)}${left!=null&&left>0?`・あと約${left}秒`:""}`);}};r.onload=()=>{got=true;done(String(r.result||""));};r.onerror=()=>{got=true;fail(r.error);};r.readAsText(f,"utf-8");}catch(err){fail(err);}
     return;}
   if(t.dataset&&t.dataset.ocr){const fs=[...t.files];t.value="";runOCR(fs,t.dataset.ocr);return;}
   if(t.dataset&&t.dataset.type){
