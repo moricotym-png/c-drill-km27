@@ -402,7 +402,7 @@ const SEED=[
 ];
 
 const KEY="c-drill-v1";
-const APP_VER="2026-11-24a"; // 画面を変えたら上げる（設定の一番下に表示。新しい版があれば自動で読みこみ直す）
+const APP_VER="2026-11-24b"; // 画面を変えたら上げる（設定の一番下に表示。新しい版があれば自動で読みこみ直す）
 const DAYS=[0,1,3,7,14,30,60];
 const LV=["未学習","Lv.1","Lv.2","Lv.3","Lv.4","Lv.5","定着"];
 const TYPES={en2ja:"英語を見て意味を選ぶ",ja2en:"意味を見て英語を選ぶ",cloze:"例文の空欄に入る語を選ぶ",listen:"発音を聞いて意味を選ぶ",spell:"つづりを書く（Lv.2から）",para:"ふつうの英語からネイティブの表現を選ぶ"};
@@ -741,7 +741,7 @@ function gPrep(){
   const id=G.items[G.i];if(!id){gFinish();return;}
   const g=(G.pool&&G.pool.get(id))||gAll().find(x=>x.id===id);if(!g){G.i++;return gPrep();}
   G.cur=g;G.answered=false;G.ok=false;G.pick=null;G.typed="";G.showScript=false;if(isLis(g))lisSay(g,true);
-  if(g.type==="mc"){const ix=(g.choices||[]).map((c,k)=>k);G.fixed=/[（(]\s*[a-d]\s*[)）]/.test(g.exp||"");G.order=G.fixed?ix:shuffle(ix);} // 解説が (a)(b)… で書いてあれば本の順のまま
+  if(g.type==="mc"){const ix=(g.choices||[]).map((c,k)=>k);const ex=g.exp||"";G.lab=/[（(]\s*[a-d]\s*[)）]/.test(ex)?"abcd":ix.length===4&&/(^|[\s。、　・])[1-4]\s*(〜\s*[1-4]\s*)?(正しい|誤り|不適当|不適|適当|正|誤|○|×)?\s*[：:・]/.test(ex)?"1234":"";G.fixed=!!G.lab;G.order=G.fixed?ix:shuffle(ix);} // 解説が (a)(b)… や「1：正」のように番号で書いてあれば、本の順のまま番号を付ける
   if(g.type==="order"){G.tiles=shuffle(gAns(g).split(/\s+/).filter(Boolean).map(t=>({t})));G.built=[];}
 }
 function gTick(){if(!G)return;const now=Date.now(),dt=Math.min(Math.max(0,now-(G.lastT||now)),90000);G.lastT=now;S.stats.timeMs+=dt;
@@ -783,10 +783,10 @@ function renderGram(){
       <button class="btn primary wide" data-act="g-home">ホームへ</button>`;}
   const g=G.cur,total=G.items.length,pct=Math.round(G.i/total*100);
   const head=`<div class="qhead"><button class="ghost" data-act="g-quit">やめる</button><div class="prog"><i style="width:${pct}%"></i></div><span class="count">${Math.min(G.i+1,total)}/${total}</span>${F?`<span class="flowleft">⏱${Math.max(0,Math.ceil((F.end-Date.now())/60000))}分</span>`:""}</div>`;
-  const kick=g.type==="mc"?"正しいものを選ぼう":g.type==="input"?"答えを書こう":"正しい順に並べよう";
+  const kick=g.type==="mc"?(/誤って|誤りは|不適当|適切でない|正しくない/.test(g.q||"")?"<b class=\"ng-t\">誤っているもの</b>を選ぼう":(g.choices||[]).length===2&&g.choices[0]==="○"?"○か×か選ぼう":"正しいものを選ぼう"):g.type==="input"?"答えを書こう":"正しい順に並べよう";
   let body="";
   if(g.type==="mc")body=`<div class="opts">${G.order.map(k=>{let c="opt";if(G.answered){if(k===g.answer)c+=" is-ok";else if(k===G.pick)c+=" is-ng";else c+=" dim";}
-    return`<button class="${c}" data-act="g-pick" data-k="${k}" ${G.answered?"disabled":""}>${G.fixed?`<span class="olet">(${"abcd"[k]})</span>`:""}${esc(g.choices[k])}</button>`;}).join("")}</div>`;
+    return`<button class="${c}" data-act="g-pick" data-k="${k}" ${G.answered?"disabled":""}>${G.fixed?`<span class="olet">${G.lab==="abcd"?`(${"abcd"[k]})`:`${k+1}`}</span>`:""}${esc(g.choices[k])}</button>`;}).join("")}</div>`;
   if(g.type==="input")body=`<input class="spell" id="g-in" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" value="${esc(G.typed)}" ${G.answered?"disabled":""} aria-label="答え">
     ${G.answered?"":`<button class="btn primary wide" data-act="g-check">答え合わせ</button>`}`;
   if(g.type==="order")body=`<div class="tiles built">${G.built.map((x,i)=>`<button class="tile" data-act="g-unt" data-i="${i}" ${G.answered?"disabled":""}>${esc(x.t)}</button>`).join("")||'<span class="note">下の語を、正しい順にタップしよう</span>'}</div>
