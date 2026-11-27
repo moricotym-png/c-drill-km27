@@ -402,7 +402,7 @@ const SEED=[
 ];
 
 const KEY="c-drill-v1";
-const APP_VER="2026-11-24b"; // 画面を変えたら上げる（設定の一番下に表示。新しい版があれば自動で読みこみ直す）
+const APP_VER="2026-11-27a"; // 画面を変えたら上げる（設定の一番下に表示。新しい版があれば自動で読みこみ直す）
 const DAYS=[0,1,3,7,14,30,60];
 const LV=["未学習","Lv.1","Lv.2","Lv.3","Lv.4","Lv.5","定着"];
 const TYPES={en2ja:"英語を見て意味を選ぶ",ja2en:"意味を見て英語を選ぶ",cloze:"例文の空欄に入る語を選ぶ",listen:"発音を聞いて意味を選ぶ",spell:"つづりを書く（Lv.2から）",para:"ふつうの英語からネイティブの表現を選ぶ"};
@@ -1037,10 +1037,14 @@ function startSession(mode,set,list){
   else if(mode==="retry"&&list)items=shuffle(list.slice()).map(w=>({id:w.id,phase:"quiz"}));
   else if(mode==="soon")items=shuffle(soonReady()).map(w=>({id:w.id,phase:"quiz"}));
   else if(mode==="new"){const ws=pickNew(newLeft());for(let i=0;i<ws.length;i+=5){const ch=ws.slice(i,i+5);ch.forEach(w=>items.push({id:w.id,phase:"intro"}));shuffle(ch).forEach(w=>items.push({id:w.id,phase:"quiz"}));}}
-  else if(mode==="unit")items=shuffle(courseUnitWords(set)).map(w=>({id:w.id,phase:"quiz"}));
+  else if(mode==="unit"){ // テキストの単語練習：まだ覚えていない単語は、毎日の新しい単語と同じく「紹介→問題」を5語ずつ。覚えた単語は問題だけ
+    const ws=courseUnitWords(set),fresh=ws.filter(w=>!w.stage).slice(0,20),old=shuffle(ws.filter(w=>w.stage)).slice(0,fresh.length?10:30);
+    for(let i=0;i<fresh.length;i+=5){const ch=fresh.slice(i,i+5);ch.forEach(w=>items.push({id:w.id,phase:"intro"}));shuffle(ch).forEach(w=>items.push({id:w.id,phase:"quiz"}));}
+    old.forEach(w=>items.push({id:w.id,phase:"quiz"}));var unitFresh=fresh.map(w=>w.id);}
   else items=shuffle(S.words.filter(w=>w.set===set)).map(w=>({id:w.id,phase:"quiz"}));
   if(!items.length)return;
   Q={mode,set,items,i:0,res:{},requeued:{},n:0,c:0,done:false,combo:0,bestCombo:0,lastT:Date.now(),newMedals:[]};
+  if(mode==="unit"&&typeof unitFresh!=="undefined")Q.fresh=unitFresh; // 初めて覚えた単語だけ、毎日の単語と同じように復習の予定に入れる
   if(mode==="review"&&!list&&!F&&revSet().min)Q.end=Date.now()+revSet().min*60000;
   prepare();saveQ();render();window.scrollTo(0,0);speakCurrent();
 }
@@ -1141,7 +1145,8 @@ function known(){ // 新しい単語の紹介で「もう知ってる」
   Q.items=Q.items.filter((it,k)=>k<=Q.i||it.id!==w.id);Q.known=(Q.known||0)+1;save();next();
 }
 function applySRS(){
-  if(!Q||Q.mode==="free"||Q.mode==="unit"||Q.mode==="retry"||Q.applied)return;Q.applied=true;const t=today();
+  if(!Q||Q.mode==="free"||(Q.mode==="unit"&&!(Q.fresh&&Q.fresh.length))||Q.mode==="retry"||Q.applied)return;Q.applied=true;const t=today();
+  const only=Q.mode==="unit"?new Set(Q.fresh):null; // テキスト練習では、初めての単語だけ予定を決める（覚えた単語の予定は変えない）
   const gap=(S.settings.soonMin||0)*60000,later=Date.now()+gap;
   if(Q.mode==="soon"){
     Object.entries(Q.res).forEach(([id,r])=>{const w=byId(id);if(!w)return;
@@ -1149,7 +1154,7 @@ function applySRS(){
       if(r.wrong){w.ng++;w.soon=gap?later:null;}else{w.ok++;delete w.soon;}});
     save();return;
   }
-  Object.entries(Q.res).forEach(([id,r])=>{const w=byId(id);if(!w)return;
+  Object.entries(Q.res).forEach(([id,r])=>{const w=byId(id);if(!w||(only&&!only.has(id)))return;
     const firstTime=w.stage===0;delete w.soon;
     if(r.grade==="perfect"){w.ok++;if(!w.learned)w.learned=t;w.stage=6;w.due=addDays(t,90);return;}
     if(gap&&(r.wrong||firstTime||r.grade==="unsure"))w.soon=later;
