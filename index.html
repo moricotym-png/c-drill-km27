@@ -220,7 +220,7 @@ textarea{resize:vertical;font-size:14px}
 .unit-h{width:100%;background:none;border:0;display:grid;grid-template-columns:1fr auto;gap:4px 8px;padding:12px 14px;text-align:left;align-items:center}
 .unit-name{font-weight:800}.unit-h .bar{grid-column:1/2}.unit-num{font-size:12px;color:var(--muted);font-weight:700}
 .unit-d{padding:0 14px 12px;display:flex;flex-direction:column;gap:6px}
-.st-完了{background:var(--ok-bg);color:var(--ok)}.st-苦手{background:var(--ng-bg);color:var(--ng)}.st-学習中{background:var(--locked);color:var(--ink)}.st-未着手{background:var(--locked);color:var(--muted)}
+.st-テスト待ち{background:var(--primary);color:var(--on-primary)}.st-完了{background:var(--ok-bg);color:var(--ok)}.st-苦手{background:var(--ng-bg);color:var(--ng)}.st-学習中{background:var(--locked);color:var(--ink)}.st-未着手{background:var(--locked);color:var(--muted)}
 .weak .wk{display:grid;grid-template-columns:auto 1fr auto;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid var(--line)}.weak .wk:last-child{border:0}
 .score{font-family:var(--f-word);font-size:56px;font-weight:800;margin:0;line-height:1}.score small{font-size:18px}
 .gram details{margin-top:4px}.gram .sets{margin-top:8px}
@@ -408,7 +408,7 @@ const SEED=[
 ];
 
 const KEY="c-drill-v1";
-const APP_VER="2026-11-28a"; // 画面を変えたら上げる（設定の一番下に表示。新しい版があれば自動で読みこみ直す）
+const APP_VER="2026-11-28b"; // 画面を変えたら上げる（設定の一番下に表示。新しい版があれば自動で読みこみ直す）
 const DAYS=[0,1,3,7,14,30,60];
 const LV=["未学習","Lv.1","Lv.2","Lv.3","Lv.4","Lv.5","定着"];
 const TYPES={en2ja:"英語を見て意味を選ぶ",ja2en:"意味を見て英語を選ぶ",cloze:"例文の空欄に入る語を選ぶ",listen:"発音を聞いて意味を選ぶ",spell:"つづりを書く（Lv.2から）",para:"ふつうの英語からネイティブの表現を選ぶ"};
@@ -832,9 +832,9 @@ function unitStats(book,u){
   const acc=ok+ng?Math.round(ok/(ok+ng)*100):null;
   const tests=(S.tests||{})[testKey(book,u.unit)]||[];const last=tests[tests.length-1],best=tests.reduce((a,t)=>Math.max(a,t.s),0);
   const done=best>=80;
-  const weak=(last&&last.s<70)||(acc!==null&&ok+ng>=5&&acc<70);
+  const weak=!done&&((last&&last.s<70)||(acc!==null&&ok+ng>=5&&acc<70)); // テストで80点以上なら「完了」を優先（正答率の低さは「苦手」にしない）
   const read=(u.lessons||[]).filter(l=>l.read).length;
-  const status=done&&!weak?"完了":weak?"苦手":learned||read?"学習中":"未着手";
+  const status=done?"完了":weak?"苦手":n&&learned===n?"テスト待ち":learned||read?"学習中":"未着手";
   return{read,n,learned,pct:n?Math.round(learned/n*100):0,acc,last,best,done,weak,status,tests};
 }
 function planInfo(book){
@@ -890,7 +890,7 @@ function renderCourse(){
     <div class="units">${st.map(({u,s})=>{const open=courseOpen===u.unit;return`<div class="unit ${s.status==="苦手"?"is-weak":s.status==="完了"?"is-done":""}">
       <button class="unit-h" data-act="c-open" data-u="${esc(u.unit)}" aria-expanded="${open}"><span class="unit-name">${esc(u.unit)}</span><span class="chip st-${s.status}">${s.status}</span>
         <span class="bar"><i style="width:${s.pct}%"></i></span><span class="unit-num">${s.learned}/${s.n}${s.best?`・最高${s.best}点`:""}</span></button>
-      ${open?`<div class="unit-d"><p class="note">単語 ${u.words.length}・文法 ${u.gram.length}${u.lessons.length?`・解説 ${s.read}/${u.lessons.length} 読んだ`:""}　学習ずみ ${s.pct}%　正答率 ${s.acc===null?"—":s.acc+"%"}</p>
+      ${open?`<div class="unit-d">${s.status==="テスト待ち"?`<p class="hint">全部学習しました。下の「理解度テスト」で80点以上を取ると「完了」になります。</p>`:""}<p class="note">単語 ${u.words.length}・文法 ${u.gram.length}${u.lessons.length?`・解説 ${s.read}/${u.lessons.length} 読んだ`:""}　学習ずみ ${s.pct}%　正答率 ${s.acc===null?"—":s.acc+"%"}</p>
         ${s.tests.length?`<p class="note">テストの記録：${s.tests.slice(-5).map(t=>`${md(t.d)} ${t.s}点`).join("・")}</p>`:""}
         ${u.lessons.length?`<button class="btn wide" data-act="c-lessons" data-u="${esc(u.unit)}">📖 解説を読む（${u.lessons.length}）</button>`:""}
         <div class="row-btns"><button class="btn primary" data-act="c-test" data-u="${esc(u.unit)}">理解度テスト</button>
